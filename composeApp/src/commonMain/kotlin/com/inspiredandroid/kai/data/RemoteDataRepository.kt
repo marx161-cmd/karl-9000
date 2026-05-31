@@ -14,6 +14,7 @@ import com.inspiredandroid.kai.inference.DownloadedModel
 import com.inspiredandroid.kai.inference.EngineState
 import com.inspiredandroid.kai.inference.InferenceMessage
 import com.inspiredandroid.kai.inference.LocalInferenceEngine
+import com.inspiredandroid.kai.inference.LocalInferenceBackendMode
 import com.inspiredandroid.kai.inference.LocalModel
 import com.inspiredandroid.kai.inference.LocalTool
 import com.inspiredandroid.kai.inference.NoModelDownloadedException
@@ -143,13 +144,15 @@ class RemoteDataRepository(
     private val prettyJson = Json { prettyPrint = true }
 
     /**
-     * Returns the tools exposed to the on-device (LiteRT) model. Filtered by name against
-     * [LOCAL_TOOL_ALLOWLIST]. Tools the user has disabled in settings (e.g. shell command,
-     * which is gated behind `isToolEnabled("execute_shell_command")`) won't appear in
-     * `getAvailableTools()` in the first place, so they're naturally excluded.
+     * Returns the tools exposed to the on-device (LiteRT) model. Safe mode filters by
+     * [LOCAL_TOOL_ALLOWLIST]. Experimental mode passes every enabled tool through, including
+     * complex tools that small local models may fail to call cleanly.
      */
-    private fun getLocalSafeTools(): List<Tool> = getAvailableTools()
-        .filter { it.schema.name in LOCAL_TOOL_ALLOWLIST }
+    private fun getLocalTools(): List<Tool> = when (appSettings.getLocalToolAccessMode()) {
+        LocalToolAccessMode.SAFE_ONLY -> getAvailableTools().filter { it.schema.name in LOCAL_TOOL_ALLOWLIST }
+        LocalToolAccessMode.ALL_ENABLED -> getAvailableTools()
+        LocalToolAccessMode.DISABLED -> emptyList()
+    }
 
     // Per-instance model storage: instanceId -> models flow
     private val modelsByInstance: MutableMap<String, MutableStateFlow<List<SettingsModel>>> = mutableMapOf()
@@ -319,6 +322,7 @@ class RemoteDataRepository(
                     SettingsModel(
                         id = it.id,
                         subtitle = "${it.displayName} (${formatFileSize(it.sizeBytes)})",
+                        displayName = it.displayName,
                         isSelected = it.id == selectedModelId,
                     )
                 }
@@ -418,12 +422,12 @@ class RemoteDataRepository(
             )
             history.update { it + statusEntry }
             try {
-                engine.initialize(model, contextTokens)
+                engine.initialize(model, contextTokens, appSettings.getLocalInferenceBackendMode())
             } finally {
                 history.update { h -> h.filter { it.id != statusEntry.id } }
             }
         } else {
-            engine.initialize(model, contextTokens)
+            engine.initialize(model, contextTokens, appSettings.getLocalInferenceBackendMode())
         }
 
         // Callers pass either a CHAT_LOCAL system prompt (chat + silent paths) or null
@@ -431,7 +435,7 @@ class RemoteDataRepository(
         // prompt shape). We hand whichever one through to the engine unchanged.
         // Native litert-lm `automaticToolCalling` owns the tool loop — our allowlisted
         // tools are passed once via [localToolDescriptionJson] and the engine drives them.
-        val localTools: List<LocalTool> = getLocalSafeTools().map { tool ->
+        val localTools: List<LocalTool> = getLocalTools().map { tool ->
             LocalTool(
                 name = tool.schema.name,
                 descriptionJsonString = localToolDescriptionJson(tool),
@@ -1606,6 +1610,12 @@ class RemoteDataRepository(
         appSettings.setToolEnabled(toolId, enabled)
     }
 
+    override fun getLocalToolAccessMode(): LocalToolAccessMode = appSettings.getLocalToolAccessMode()
+
+    override fun setLocalToolAccessMode(mode: LocalToolAccessMode) {
+        appSettings.setLocalToolAccessMode(mode)
+    }
+
     // MCP servers
     override fun getMcpServers(): List<McpServerConfig> = mcpServerManager.getServers()
 
@@ -2117,6 +2127,13 @@ class RemoteDataRepository(
 
     override fun setModelContextTokens(modelId: String, contextTokens: Int) {
         appSettings.setModelContextTokens(modelId, contextTokens)
+    }
+
+    override fun getLocalInferenceBackendMode(): LocalInferenceBackendMode = appSettings.getLocalInferenceBackendMode()
+
+    override fun setLocalInferenceBackendMode(mode: LocalInferenceBackendMode) {
+        appSettings.setLocalInferenceBackendMode(mode)
+        localInferenceEngine?.releaseInBackground()
     }
 
     override suspend fun releaseLocalEngine() {

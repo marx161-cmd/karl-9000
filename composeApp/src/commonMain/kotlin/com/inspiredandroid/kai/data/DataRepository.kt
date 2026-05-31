@@ -3,6 +3,7 @@ package com.inspiredandroid.kai.data
 import com.inspiredandroid.kai.inference.DownloadError
 import com.inspiredandroid.kai.inference.DownloadedModel
 import com.inspiredandroid.kai.inference.EngineState
+import com.inspiredandroid.kai.inference.LocalInferenceBackendMode
 import com.inspiredandroid.kai.inference.LocalModel
 import com.inspiredandroid.kai.mcp.McpServerConfig
 import com.inspiredandroid.kai.network.tools.ToolInfo
@@ -59,6 +60,8 @@ interface DataRepository {
     // Tool management
     fun getToolDefinitions(): List<ToolInfo>
     fun setToolEnabled(toolId: String, enabled: Boolean)
+    fun getLocalToolAccessMode(): LocalToolAccessMode
+    fun setLocalToolAccessMode(mode: LocalToolAccessMode)
 
     // MCP servers
     fun getMcpServers(): List<McpServerConfig>
@@ -200,6 +203,8 @@ interface DataRepository {
     fun getTotalDeviceMemoryBytes(): Long
     fun getModelContextTokens(modelId: String): Int
     fun setModelContextTokens(modelId: String, contextTokens: Int)
+    fun getLocalInferenceBackendMode(): LocalInferenceBackendMode
+    fun setLocalInferenceBackendMode(mode: LocalInferenceBackendMode)
     suspend fun releaseLocalEngine()
     fun getLocalDownloadingModelId(): StateFlow<String?>?
     fun getLocalDownloadProgress(): StateFlow<Float?>?

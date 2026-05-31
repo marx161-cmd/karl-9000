@@ -38,6 +38,11 @@ android {
             dimension = "distribution"
             isDefault = true
         }
+        create("termuxSuite") {
+            dimension = "distribution"
+            applicationId = "com.termux.kai"
+            versionNameSuffix = "-termux"
+        }
     }
 
     packaging {
@@ -72,6 +77,10 @@ android {
                     signingConfigs.getByName("debug")
                 }
         }
+    }
+
+    lint {
+        disable += "Instantiatable"
     }
 
     buildFeatures {

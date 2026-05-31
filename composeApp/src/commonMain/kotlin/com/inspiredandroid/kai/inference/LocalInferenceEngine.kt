@@ -53,6 +53,12 @@ enum class EngineState {
     ERROR,
 }
 
+enum class LocalInferenceBackendMode {
+    AUTO,
+    GPU,
+    CPU,
+}
+
 data class InferenceMessage(
     val role: String,
     val content: String,
@@ -91,7 +97,11 @@ interface LocalInferenceEngine {
 
     val currentModelId: String?
 
-    suspend fun initialize(model: DownloadedModel, contextTokens: Int = 0)
+    suspend fun initialize(
+        model: DownloadedModel,
+        contextTokens: Int = 0,
+        backendMode: LocalInferenceBackendMode = LocalInferenceBackendMode.AUTO,
+    )
     suspend fun release()
 
     /**

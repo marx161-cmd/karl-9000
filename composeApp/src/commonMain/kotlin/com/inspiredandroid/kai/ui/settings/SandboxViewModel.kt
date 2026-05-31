@@ -16,12 +16,15 @@ import kotlinx.coroutines.launch
 @Immutable
 data class SandboxUiState(
     val showSandbox: Boolean = false,
+    val sandboxEnvironmentName: String = "Alpine Linux",
     val sandboxInstalled: Boolean = false,
     val sandboxReady: Boolean = false,
     val sandboxProgress: Float? = null,
     val sandboxStatusText: String = "",
     val sandboxDiskUsageMB: Long = 0,
     val sandboxPackagesInstalled: Boolean = false,
+    val sandboxResetAvailable: Boolean = true,
+    val sandboxPackageManagerAvailable: Boolean = true,
     val isSandboxEnabled: Boolean = true,
     val isWorking: Boolean = false,
     val hasError: Boolean = false,
@@ -57,18 +60,22 @@ class SandboxViewModel(
     }
 
     private fun applyStatus(status: SandboxStatus, base: SandboxUiState): SandboxUiState = base.copy(
+        sandboxEnvironmentName = status.environmentName,
         sandboxInstalled = status.installed,
         sandboxReady = status.ready,
         sandboxProgress = status.progress,
         sandboxStatusText = status.statusText,
         sandboxDiskUsageMB = status.diskUsageMB,
         sandboxPackagesInstalled = status.packagesInstalled,
+        sandboxResetAvailable = status.resetAvailable,
+        sandboxPackageManagerAvailable = status.packageManagerAvailable,
         isWorking = status.working,
         hasError = status.error,
     )
 
     fun onToggleSandbox(enabled: Boolean) {
         dataRepository.setSandboxEnabled(enabled)
+        if (!enabled) sandboxController.cancel()
         _state.update { it.copy(isSandboxEnabled = enabled) }
     }
 

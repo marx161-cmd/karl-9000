@@ -112,6 +112,7 @@ import com.inspiredandroid.kai.Version
 import com.inspiredandroid.kai.data.EmailAccount
 import com.inspiredandroid.kai.data.HeartbeatLogEntry
 import com.inspiredandroid.kai.data.ImportSection
+import com.inspiredandroid.kai.data.LocalToolAccessMode
 import com.inspiredandroid.kai.data.MemoryEntry
 import com.inspiredandroid.kai.data.ScheduledTask
 import com.inspiredandroid.kai.data.Service
@@ -123,6 +124,7 @@ import com.inspiredandroid.kai.data.detectImportSections
 import com.inspiredandroid.kai.formatFileSize
 import com.inspiredandroid.kai.inference.DevicePerformance
 import com.inspiredandroid.kai.inference.DownloadError
+import com.inspiredandroid.kai.inference.LocalInferenceBackendMode
 import com.inspiredandroid.kai.inference.LocalModel
 import com.inspiredandroid.kai.inference.calculateDevicePerformance
 import com.inspiredandroid.kai.inference.estimateGpuMemoryMb
@@ -550,7 +552,7 @@ private fun SandboxSettingsCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Alpine Linux",
+                    text = sandboxState.sandboxEnvironmentName,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onBackground,
                 )
@@ -605,15 +607,17 @@ private fun SandboxSettingsCard(
                             Text(stringResource(Res.string.settings_sandbox_install_packages))
                         }
                     }
-                    OutlinedButton(onClick = { showResetDialog = true }, modifier = Modifier.handCursor()) {
-                        Text(stringResource(Res.string.settings_sandbox_uninstall))
+                    if (sandboxState.sandboxResetAvailable) {
+                        OutlinedButton(onClick = { showResetDialog = true }, modifier = Modifier.handCursor()) {
+                            Text(stringResource(Res.string.settings_sandbox_uninstall))
+                        }
                     }
                 }
             }
         }
     }
 
-    if (showResetDialog) {
+    if (showResetDialog && sandboxState.sandboxResetAvailable) {
         AlertDialog(
             onDismissRequest = { showResetDialog = false },
             title = { Text(stringResource(Res.string.settings_sandbox_uninstall)) },
@@ -934,7 +938,7 @@ private fun ServicesContent(uiState: SettingsUiState, actions: SettingsActions) 
                     onRemove = { actions.onRemoveService(entry.instanceId) },
                     isDragging = isDragging,
                     dragHandleModifier = if (entries.size >= 2) Modifier.draggableHandle() else null,
-                    localAvailableModels = uiState.localAvailableModels,
+                    localAvailableModels = persistentListOf(),
                     totalDeviceMemoryBytes = uiState.totalDeviceMemoryBytes,
                     localFreeSpaceBytes = uiState.localFreeSpaceBytes,
                     localDownloadingModelId = uiState.localDownloadingModelId,
@@ -943,6 +947,10 @@ private fun ServicesContent(uiState: SettingsUiState, actions: SettingsActions) 
                     onDownloadLocalModel = actions.onDownloadLocalModel,
                     onCancelLocalModelDownload = actions.onCancelLocalModelDownload,
                     onDeleteLocalModel = actions.onDeleteLocalModel,
+                    localToolAccessMode = uiState.localToolAccessMode,
+                    onChangeLocalToolAccessMode = actions.onChangeLocalToolAccessMode,
+                    localInferenceBackendMode = uiState.localInferenceBackendMode,
+                    onChangeLocalInferenceBackendMode = actions.onChangeLocalInferenceBackendMode,
                     onChangeModelContextTokens = actions.onChangeModelContextTokens,
                     modelContextTokens = uiState.modelContextTokens,
                 )
@@ -1062,6 +1070,10 @@ private fun ConfiguredServiceCardContent(
     onDownloadLocalModel: (LocalModel) -> Unit = {},
     onCancelLocalModelDownload: () -> Unit = {},
     onDeleteLocalModel: (String) -> Unit = {},
+    localToolAccessMode: LocalToolAccessMode = LocalToolAccessMode.SAFE_ONLY,
+    onChangeLocalToolAccessMode: (LocalToolAccessMode) -> Unit = {},
+    localInferenceBackendMode: LocalInferenceBackendMode = LocalInferenceBackendMode.AUTO,
+    onChangeLocalInferenceBackendMode: (LocalInferenceBackendMode) -> Unit = {},
     onChangeModelContextTokens: (String, Int) -> Unit = { _, _ -> },
     modelContextTokens: Map<String, Int> = emptyMap(),
 ) {
@@ -1149,6 +1161,10 @@ private fun ConfiguredServiceCardContent(
                         onDownloadModel = onDownloadLocalModel,
                         onCancelDownload = onCancelLocalModelDownload,
                         onDeleteModel = onDeleteLocalModel,
+                        localToolAccessMode = localToolAccessMode,
+                        onChangeLocalToolAccessMode = onChangeLocalToolAccessMode,
+                        localInferenceBackendMode = localInferenceBackendMode,
+                        onChangeLocalInferenceBackendMode = onChangeLocalInferenceBackendMode,
                         onChangeModelContextTokens = onChangeModelContextTokens,
                         modelContextTokens = modelContextTokens,
                     )
@@ -1357,10 +1373,18 @@ private fun LiteRTSettings(
     onDownloadModel: (LocalModel) -> Unit,
     onCancelDownload: () -> Unit,
     onDeleteModel: (String) -> Unit,
+    localToolAccessMode: LocalToolAccessMode,
+    onChangeLocalToolAccessMode: (LocalToolAccessMode) -> Unit,
+    localInferenceBackendMode: LocalInferenceBackendMode,
+    onChangeLocalInferenceBackendMode: (LocalInferenceBackendMode) -> Unit,
     onChangeModelContextTokens: (String, Int) -> Unit,
     modelContextTokens: Map<String, Int>,
 ) {
     val downloadedIds = remember(downloadedModels) { downloadedModels.map { it.id }.toSet() }
+    val availableIds = remember(availableModels) { availableModels.map { it.id }.toSet() }
+    val sideLoadedModels = remember(downloadedModels, availableModels) {
+        downloadedModels.filter { it.id !in availableIds }
+    }
 
     Text(
         text = stringResource(Res.string.litert_on_device_description),
@@ -1371,10 +1395,66 @@ private fun LiteRTSettings(
     Spacer(Modifier.height(4.dp))
 
     Text(
-        text = stringResource(Res.string.litert_tool_support),
+        text = when (localToolAccessMode) {
+            LocalToolAccessMode.SAFE_ONLY -> "Local tools: safe allowlist"
+            LocalToolAccessMode.ALL_ENABLED -> "Local tools: all enabled tools (experimental)"
+            LocalToolAccessMode.DISABLED -> "Local tools: disabled"
+        },
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+
+    Spacer(Modifier.height(8.dp))
+
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(
+            selected = localToolAccessMode == LocalToolAccessMode.SAFE_ONLY,
+            onClick = { onChangeLocalToolAccessMode(LocalToolAccessMode.SAFE_ONLY) },
+            label = { Text("Safe") },
+        )
+        FilterChip(
+            selected = localToolAccessMode == LocalToolAccessMode.ALL_ENABLED,
+            onClick = { onChangeLocalToolAccessMode(LocalToolAccessMode.ALL_ENABLED) },
+            label = { Text("All tools") },
+        )
+        FilterChip(
+            selected = localToolAccessMode == LocalToolAccessMode.DISABLED,
+            onClick = { onChangeLocalToolAccessMode(LocalToolAccessMode.DISABLED) },
+            label = { Text("Off") },
+        )
+    }
+
+    Spacer(Modifier.height(12.dp))
+
+    Text(
+        text = when (localInferenceBackendMode) {
+            LocalInferenceBackendMode.AUTO -> "LiteRT backend: GPU with CPU init fallback"
+            LocalInferenceBackendMode.GPU -> "LiteRT backend: GPU only"
+            LocalInferenceBackendMode.CPU -> "LiteRT backend: CPU only"
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    Spacer(Modifier.height(8.dp))
+
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(
+            selected = localInferenceBackendMode == LocalInferenceBackendMode.AUTO,
+            onClick = { onChangeLocalInferenceBackendMode(LocalInferenceBackendMode.AUTO) },
+            label = { Text("Auto") },
+        )
+        FilterChip(
+            selected = localInferenceBackendMode == LocalInferenceBackendMode.GPU,
+            onClick = { onChangeLocalInferenceBackendMode(LocalInferenceBackendMode.GPU) },
+            label = { Text("GPU") },
+        )
+        FilterChip(
+            selected = localInferenceBackendMode == LocalInferenceBackendMode.CPU,
+            onClick = { onChangeLocalInferenceBackendMode(LocalInferenceBackendMode.CPU) },
+            label = { Text("CPU") },
+        )
+    }
 
     Spacer(Modifier.height(12.dp))
 
@@ -1452,20 +1532,28 @@ private fun LiteRTSettings(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Text(
-                    text = stringResource(Res.string.litert_context_size, "${contextTokens / 1024}K"),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                KaiSlider(
-                    value = contextSliderValue,
-                    onValueChange = { contextSliderValue = it },
-                    onValueChangeFinished = {
-                        onChangeModelContextTokens(model.id, contextTokens)
-                    },
-                    valueRange = 0f..steps.toFloat(),
-                    steps = steps - 1,
-                )
+                if (steps > 0) {
+                    Text(
+                        text = stringResource(Res.string.litert_context_size, "${contextTokens / 1024}K"),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    KaiSlider(
+                        value = contextSliderValue,
+                        onValueChange = { contextSliderValue = it },
+                        onValueChangeFinished = {
+                            onChangeModelContextTokens(model.id, contextTokens)
+                        },
+                        valueRange = 0f..steps.toFloat(),
+                        steps = steps - 1,
+                    )
+                } else {
+                    Text(
+                        text = stringResource(Res.string.litert_context_size, "${model.defaultContextTokens / 1024}K fixed"),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 if (isDownloading && downloadProgress != null) {
                     Spacer(Modifier.height(8.dp))
                     LinearProgressIndicator(
@@ -1492,6 +1580,51 @@ private fun LiteRTSettings(
                                 style = MaterialTheme.typography.labelSmall,
                             )
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    sideLoadedModels.forEach { model ->
+        val isSelected = selectedModel?.id == model.id
+
+        Surface(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            shape = RoundedCornerShape(8.dp),
+            tonalElevation = if (isSelected) 3.dp else 1.dp,
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(
+                        selected = isSelected,
+                        onClick = { onSelectModel(model.id) },
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = model.displayName ?: model.id,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                        Text(
+                            text = model.subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(
+                        onClick = { onDeleteModel(model.id) },
+                        modifier = Modifier.handCursor(),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }

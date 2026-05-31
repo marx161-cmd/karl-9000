@@ -5,6 +5,7 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import kotlinx.coroutines.flow.StateFlow
 
 data class SandboxStatus(
+    val environmentName: String = "Alpine Linux",
     val installed: Boolean = false,
     val ready: Boolean = false,
     val working: Boolean = false,
@@ -12,6 +13,8 @@ data class SandboxStatus(
     val statusText: String = "",
     val diskUsageMB: Long = 0,
     val packagesInstalled: Boolean = false,
+    val resetAvailable: Boolean = true,
+    val packageManagerAvailable: Boolean = true,
     val error: Boolean = false,
 )
 

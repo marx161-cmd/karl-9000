@@ -2,8 +2,10 @@ package com.inspiredandroid.kai.ui.settings
 
 import androidx.compose.runtime.Immutable
 import com.inspiredandroid.kai.data.ImportSection
+import com.inspiredandroid.kai.data.LocalToolAccessMode
 import com.inspiredandroid.kai.data.Service
 import com.inspiredandroid.kai.data.ThemeMode
+import com.inspiredandroid.kai.inference.LocalInferenceBackendMode
 import com.inspiredandroid.kai.inference.LocalModel
 import com.inspiredandroid.kai.mcp.PopularMcpServer
 
@@ -18,6 +20,8 @@ data class SettingsActions(
     val onChangeBaseUrl: (String, String) -> Unit,
     val onSelectModel: (String, String) -> Unit,
     val onToggleTool: (String, Boolean) -> Unit,
+    val onChangeLocalToolAccessMode: (LocalToolAccessMode) -> Unit,
+    val onChangeLocalInferenceBackendMode: (LocalInferenceBackendMode) -> Unit,
     val onSaveSoul: (String) -> Unit,
     val onToggleDynamicUi: (Boolean) -> Unit,
     val onChangeThemeMode: (ThemeMode) -> Unit,
@@ -72,6 +76,8 @@ data class SettingsActions(
             onChangeBaseUrl = { _, _ -> },
             onSelectModel = { _, _ -> },
             onToggleTool = { _, _ -> },
+            onChangeLocalToolAccessMode = {},
+            onChangeLocalInferenceBackendMode = {},
             onSaveSoul = {},
             onToggleDynamicUi = {},
             onChangeThemeMode = {},

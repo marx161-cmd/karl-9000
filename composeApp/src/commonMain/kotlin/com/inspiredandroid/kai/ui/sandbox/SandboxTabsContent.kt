@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -61,20 +62,30 @@ internal fun SandboxTabsContent(
     previewLines: List<TerminalLine> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
-    if (sandboxState.sandboxReady) {
+    if (sandboxState.sandboxReady && sandboxState.isSandboxEnabled) {
         val isPreview = LocalInspectionMode.current
         val sandboxController: SandboxController? = if (!isPreview) koinInject() else null
         val sessionViewModel: SandboxSessionViewModel? = if (!isPreview) koinViewModel() else null
         var localSubTab by remember { mutableStateOf(SandboxSubTab.Terminal) }
         val subTab = sessionViewModel?.selectedTab?.collectAsStateWithLifecycle()?.value ?: localSubTab
+        val visibleTabs = remember(sandboxState.sandboxPackageManagerAvailable) {
+            if (sandboxState.sandboxPackageManagerAvailable) {
+                SandboxSubTab.entries
+            } else {
+                listOf(SandboxSubTab.Terminal, SandboxSubTab.Files)
+            }
+        }
         val onSelectTab: (SandboxSubTab) -> Unit = sessionViewModel?.let { vm ->
             { vm.selectTab(it) }
         } ?: { localSubTab = it }
+        LaunchedEffect(subTab, visibleTabs) {
+            if (subTab !in visibleTabs) onSelectTab(SandboxSubTab.Terminal)
+        }
         Column(
             modifier = modifier,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            SandboxSubTabSelector(currentTab = subTab, onSelectTab = onSelectTab)
+            SandboxSubTabSelector(currentTab = subTab, visibleTabs = visibleTabs, onSelectTab = onSelectTab)
 
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 when (subTab) {
@@ -113,7 +124,7 @@ internal fun SandboxTabsContent(
         Column(modifier = modifier.fillMaxWidth()) {
             SettingsCard {
                 Text(
-                    text = "Alpine Linux",
+                    text = sandboxState.sandboxEnvironmentName,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onBackground,
                 )
@@ -126,7 +137,14 @@ internal fun SandboxTabsContent(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                if (sandboxState.sandboxProgress != null) {
+                if (sandboxState.sandboxReady && !sandboxState.isSandboxEnabled) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Environment access is off.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (sandboxState.sandboxProgress != null) {
                     SandboxProgressRow(sandboxState.sandboxProgress, sandboxState.sandboxStatusText, onCancelSandbox)
                 } else if (sandboxState.isWorking) {
                     SandboxProgressRow(null, sandboxState.sandboxStatusText, onCancelSandbox)
@@ -139,7 +157,7 @@ internal fun SandboxTabsContent(
                     )
                 }
 
-                if (!sandboxState.isWorking) {
+                if (!sandboxState.isWorking && !sandboxState.sandboxReady) {
                     Spacer(Modifier.height(8.dp))
                     Button(onClick = onSetupSandbox, modifier = Modifier.handCursor()) {
                         Text(stringResource(Res.string.settings_sandbox_install))
@@ -201,12 +219,13 @@ private fun SessionChipRow(viewModel: SandboxSessionViewModel) {
 @Composable
 private fun SandboxSubTabSelector(
     currentTab: SandboxSubTab,
+    visibleTabs: List<SandboxSubTab> = SandboxSubTab.entries,
     onSelectTab: (SandboxSubTab) -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(4.dp),
     ) {
-        SandboxSubTab.entries.forEach { tab ->
+        visibleTabs.forEach { tab ->
             val isSelected = currentTab == tab
             Surface(
                 modifier = Modifier

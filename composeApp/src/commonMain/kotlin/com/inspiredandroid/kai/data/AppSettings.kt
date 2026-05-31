@@ -1,6 +1,7 @@
 package com.inspiredandroid.kai.data
 
 import com.inspiredandroid.kai.defaultUiScale
+import com.inspiredandroid.kai.inference.LocalInferenceBackendMode
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +36,12 @@ enum class ThemeMode {
     Light,
     Dark,
     OledBlack,
+}
+
+enum class LocalToolAccessMode {
+    SAFE_ONLY,
+    ALL_ENABLED,
+    DISABLED,
 }
 
 /**
@@ -393,6 +400,24 @@ class AppSettings(private val settings: Settings) {
 
     fun setToolEnabled(toolId: String, enabled: Boolean) {
         settings.putBoolean("$KEY_TOOL_PREFIX$toolId", enabled)
+    }
+
+    fun getLocalToolAccessMode(): LocalToolAccessMode {
+        val saved = settings.getString(KEY_LOCAL_TOOL_ACCESS_MODE, LocalToolAccessMode.SAFE_ONLY.name)
+        return LocalToolAccessMode.entries.firstOrNull { it.name == saved } ?: LocalToolAccessMode.SAFE_ONLY
+    }
+
+    fun setLocalToolAccessMode(mode: LocalToolAccessMode) {
+        settings.putString(KEY_LOCAL_TOOL_ACCESS_MODE, mode.name)
+    }
+
+    fun getLocalInferenceBackendMode(): LocalInferenceBackendMode {
+        val saved = settings.getString(KEY_LOCAL_INFERENCE_BACKEND_MODE, LocalInferenceBackendMode.AUTO.name)
+        return LocalInferenceBackendMode.entries.firstOrNull { it.name == saved } ?: LocalInferenceBackendMode.AUTO
+    }
+
+    fun setLocalInferenceBackendMode(mode: LocalInferenceBackendMode) {
+        settings.putString(KEY_LOCAL_INFERENCE_BACKEND_MODE, mode.name)
     }
 
     fun getConversationsJson(): String? = settings.getStringOrNull(KEY_CONVERSATIONS)
@@ -1226,6 +1251,8 @@ class AppSettings(private val settings: Settings) {
         const val KEY_ENCRYPTION_KEY = "encryption_key"
         const val KEY_MIGRATION_COMPLETE = "migration_complete_v1"
         const val KEY_TOOL_PREFIX = "tool_enabled_"
+        const val KEY_LOCAL_TOOL_ACCESS_MODE = "local_tool_access_mode"
+        const val KEY_LOCAL_INFERENCE_BACKEND_MODE = "local_inference_backend_mode"
         const val KEY_SOUL = "soul_text"
         const val KEY_MEMORY_ENABLED = "memory_enabled"
         const val KEY_MEMORY_INSTRUCTIONS = "memory_instructions"

@@ -7,12 +7,14 @@ import com.inspiredandroid.kai.Platform
 import com.inspiredandroid.kai.currentPlatform
 import com.inspiredandroid.kai.data.DataRepository
 import com.inspiredandroid.kai.data.ImportSection
+import com.inspiredandroid.kai.data.LocalToolAccessMode
 import com.inspiredandroid.kai.data.Service
 import com.inspiredandroid.kai.data.TaskScheduler
 import com.inspiredandroid.kai.data.ThemeMode
 import com.inspiredandroid.kai.data.supportsAgenticFlows
 import com.inspiredandroid.kai.getBackgroundDispatcher
 import com.inspiredandroid.kai.httpClient
+import com.inspiredandroid.kai.inference.LocalInferenceBackendMode
 import com.inspiredandroid.kai.inference.LocalModel
 import com.inspiredandroid.kai.isEmailSupported
 import com.inspiredandroid.kai.isNotificationsSupported
@@ -69,6 +71,8 @@ class SettingsViewModel(
         configuredServices = buildConfiguredServiceEntries().toImmutableList(),
         availableServicesToAdd = computeAvailableServices().toImmutableList(),
         tools = dataRepository.getToolDefinitions().toImmutableList(),
+        localToolAccessMode = dataRepository.getLocalToolAccessMode(),
+        localInferenceBackendMode = dataRepository.getLocalInferenceBackendMode(),
         soulText = dataRepository.getSoulText(),
         isDynamicUiEnabled = dataRepository.isDynamicUiEnabled(),
         themeMode = dataRepository.getThemeMode(),
@@ -136,6 +140,8 @@ class SettingsViewModel(
         onChangeBaseUrl = ::onChangeBaseUrl,
         onSelectModel = ::onSelectModel,
         onToggleTool = ::onToggleTool,
+        onChangeLocalToolAccessMode = ::onChangeLocalToolAccessMode,
+        onChangeLocalInferenceBackendMode = ::onChangeLocalInferenceBackendMode,
         onSaveSoul = ::onSaveSoul,
         onToggleDynamicUi = ::onToggleDynamicUi,
         onChangeThemeMode = ::onChangeThemeMode,
@@ -694,6 +700,16 @@ class SettingsViewModel(
                 }.toImmutableList(),
             )
         }
+    }
+
+    private fun onChangeLocalToolAccessMode(mode: LocalToolAccessMode) {
+        dataRepository.setLocalToolAccessMode(mode)
+        _state.update { it.copy(localToolAccessMode = mode) }
+    }
+
+    private fun onChangeLocalInferenceBackendMode(mode: LocalInferenceBackendMode) {
+        dataRepository.setLocalInferenceBackendMode(mode)
+        _state.update { it.copy(localInferenceBackendMode = mode) }
     }
 
     // MCP server management

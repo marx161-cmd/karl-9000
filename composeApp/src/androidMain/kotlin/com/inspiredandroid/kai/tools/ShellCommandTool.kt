@@ -1,11 +1,15 @@
 package com.inspiredandroid.kai.tools
 
+import android.content.Context
 import com.inspiredandroid.kai.SandboxSessions
+import com.inspiredandroid.kai.TermuxShellSessions
+import com.inspiredandroid.kai.data.AppSettings
 import com.inspiredandroid.kai.data.currentConversationIdOrNull
 import com.inspiredandroid.kai.network.tools.ParameterSchema
 import com.inspiredandroid.kai.network.tools.Tool
 import com.inspiredandroid.kai.network.tools.ToolInfo
 import com.inspiredandroid.kai.network.tools.ToolSchema
+import com.inspiredandroid.kai.shouldUseTermuxSandbox
 import com.inspiredandroid.kai.sandbox.LinuxSandboxManager
 import com.inspiredandroid.kai.sandbox.SandboxState
 import kai.composeapp.generated.resources.Res
@@ -32,6 +36,8 @@ To show a file you produced in /root to the user, call open_file with the path r
 
 object ShellCommandTool : Tool {
     private val sandboxManager: LinuxSandboxManager by inject(LinuxSandboxManager::class.java)
+    private val context: Context by inject(Context::class.java)
+    private val appSettings: AppSettings by inject(AppSettings::class.java)
 
     override val schema = ToolSchema(
         name = "execute_shell_command",
@@ -51,8 +57,8 @@ object ShellCommandTool : Tool {
         val command = args["command"] as? String
             ?: return mapOf("success" to false, "error" to "Command is required")
 
-        if (sandboxManager.state.value !is SandboxState.Ready) {
-            return mapOf("success" to false, "error" to "Linux sandbox is not installed. Set it up in Settings > Tools.")
+        if (!appSettings.isSandboxEnabled()) {
+            return mapOf("success" to false, "error" to "Environment access is disabled in Settings.")
         }
 
         val timeoutSeconds = ((args["timeout"] as? Number)?.toLong() ?: 30L)
@@ -64,6 +70,32 @@ object ShellCommandTool : Tool {
             ?: emptyMap()
 
         val background = args["background"] as? Boolean ?: false
+
+        if (shouldUseTermuxSandbox(context)) {
+            if (background) {
+                return mapOf("success" to false, "error" to "background=true is not implemented for the Termux sandbox backend yet")
+            }
+            val prefix = buildString {
+                if (workingDir != null) {
+                    append("cd ").append(shellSingleQuote(workingDir)).append(" && ")
+                }
+                envMap.forEach { (k, v) ->
+                    append(shellSingleQuote(k)).append('=').append(shellSingleQuote(v)).append(' ')
+                }
+            }
+            val wrapped = if (prefix.isEmpty()) command else "$prefix$command"
+            val sessionId = currentConversationIdOrNull() ?: SandboxSessions.DEFAULT
+            return TermuxShellSessions.shellFor(sessionId).run(
+                command = wrapped,
+                timeoutSeconds = timeoutSeconds,
+                displayCommand = command,
+            )
+        }
+
+        if (sandboxManager.state.value !is SandboxState.Ready) {
+            return mapOf("success" to false, "error" to "Linux sandbox is not installed. Set it up in Settings > Tools.")
+        }
+
         if (background) {
             return ProcessManagerTool.processManager.startBackground(
                 command,

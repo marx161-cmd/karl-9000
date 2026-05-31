@@ -65,6 +65,61 @@ val MODEL_CATALOG = listOf(
         maxContextTokens = 32_768,
         kvPerTokenBytes = 35_000,
     ),
+    LocalModel(
+        id = "gemma-3-270m-it-q8",
+        displayName = "Gemma 3 270M IT Q8",
+        fileName = "gemma3-270m-it-q8.litertlm",
+        sizeBytes = 304_005_120L,
+        downloadUrl = "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.litertlm",
+        gpuMemoryMb = 160,
+        defaultContextTokens = 4_096,
+        maxContextTokens = 4_096,
+        kvPerTokenBytes = 20_000,
+    ),
+    LocalModel(
+        id = "gemma-3-1b-it-int4",
+        displayName = "Gemma 3 1B IT Int4",
+        fileName = "gemma3-1b-it-int4.litertlm",
+        sizeBytes = 584_417_280L,
+        downloadUrl = "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.litertlm",
+        gpuMemoryMb = 260,
+        defaultContextTokens = 4_096,
+        maxContextTokens = 4_096,
+        kvPerTokenBytes = 35_000,
+    ),
+    LocalModel(
+        id = "qwen2.5-1.5b-instruct-q8",
+        displayName = "Qwen2.5 1.5B Instruct Q8",
+        fileName = "Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+        sizeBytes = 1_597_931_520L,
+        downloadUrl = "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+        gpuMemoryMb = 430,
+        defaultContextTokens = 4_096,
+        maxContextTokens = 4_096,
+        kvPerTokenBytes = 45_000,
+    ),
+    LocalModel(
+        id = "deepseek-r1-distill-qwen-1.5b-q8",
+        displayName = "DeepSeek R1 Distill Qwen 1.5B Q8",
+        fileName = "DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm",
+        sizeBytes = 1_833_451_520L,
+        downloadUrl = "https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm",
+        gpuMemoryMb = 460,
+        defaultContextTokens = 4_096,
+        maxContextTokens = 4_096,
+        kvPerTokenBytes = 45_000,
+    ),
+    LocalModel(
+        id = "phi-4-mini-instruct-q8",
+        displayName = "Phi 4 Mini Instruct Q8",
+        fileName = "Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+        sizeBytes = 3_910_090_752L,
+        downloadUrl = "https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+        gpuMemoryMb = 760,
+        defaultContextTokens = 4_096,
+        maxContextTokens = 4_096,
+        kvPerTokenBytes = 70_000,
+    ),
 )
 
 class LiteRTInferenceEngine : LocalInferenceEngine {
@@ -78,6 +133,7 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
     override var currentModelId: String? = null
         private set
     private var currentContextTokens: Int = 0
+    private var currentBackendMode: LocalInferenceBackendMode? = null
 
     private val _engineState = MutableStateFlow(EngineState.UNINITIALIZED)
     override val engineState: StateFlow<EngineState> = _engineState
@@ -91,10 +147,19 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
     private val _downloadError = MutableStateFlow<DownloadError?>(null)
     override val downloadError: StateFlow<DownloadError?> = _downloadError
 
-    override suspend fun initialize(model: DownloadedModel, contextTokens: Int) {
+    override suspend fun initialize(
+        model: DownloadedModel,
+        contextTokens: Int,
+        backendMode: LocalInferenceBackendMode,
+    ) {
         withContext(Dispatchers.IO) {
             idleReleaseJob?.cancel()
-            if (currentModelId == model.id && currentContextTokens == contextTokens && _engineState.value == EngineState.READY) return@withContext
+            if (
+                currentModelId == model.id &&
+                currentContextTokens == contextTokens &&
+                currentBackendMode == backendMode &&
+                _engineState.value == EngineState.READY
+            ) return@withContext
             _engineState.value = EngineState.INITIALIZING
             try {
                 val modelFile = File(model.filePath)
@@ -136,22 +201,34 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
                 }
 
                 val requestedTokens = if (contextTokens > 0) contextTokens else null
-                println("LiteRT: initializing model=${model.id} maxNumTokens=$requestedTokens")
+                println("LiteRT: initializing model=${model.id} maxNumTokens=$requestedTokens backendMode=$backendMode")
 
                 val newEngine = try {
-                    try {
-                        initWithBackend(Backend.GPU(), requestedTokens)
-                    } catch (e: Exception) {
-                        initWithBackend(Backend.CPU(), requestedTokens)
+                    when (backendMode) {
+                        LocalInferenceBackendMode.GPU -> initWithBackend(Backend.GPU(), requestedTokens)
+                        LocalInferenceBackendMode.CPU -> initWithBackend(Backend.CPU(), requestedTokens)
+                        LocalInferenceBackendMode.AUTO -> try {
+                            println("LiteRT: trying GPU backend")
+                            initWithBackend(Backend.GPU(), requestedTokens)
+                        } catch (e: Exception) {
+                            println("LiteRT: GPU init failed (${e.message?.take(200)}), trying CPU backend")
+                            initWithBackend(Backend.CPU(), requestedTokens)
+                        }
                     }
                 } catch (e: Exception) {
                     // Context size not supported — retry with model default
                     println("LiteRT: init failed with maxNumTokens=$requestedTokens, falling back to default: ${e.message}")
                     if (requestedTokens != null) {
-                        try {
-                            initWithBackend(Backend.GPU(), null)
-                        } catch (e2: Exception) {
-                            initWithBackend(Backend.CPU(), null)
+                        when (backendMode) {
+                            LocalInferenceBackendMode.GPU -> initWithBackend(Backend.GPU(), null)
+                            LocalInferenceBackendMode.CPU -> initWithBackend(Backend.CPU(), null)
+                            LocalInferenceBackendMode.AUTO -> try {
+                                println("LiteRT: trying GPU backend with default context")
+                                initWithBackend(Backend.GPU(), null)
+                            } catch (e2: Exception) {
+                                println("LiteRT: GPU init failed with default context (${e2.message?.take(200)}), trying CPU backend")
+                                initWithBackend(Backend.CPU(), null)
+                            }
                         }
                     } else {
                         throw e
@@ -162,6 +239,7 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
                 conversation = newEngine.createConversation()
                 currentModelId = model.id
                 currentContextTokens = contextTokens
+                currentBackendMode = backendMode
                 _engineState.value = EngineState.READY
             } catch (e: Exception) {
                 _engineState.value = EngineState.ERROR
@@ -179,6 +257,7 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
             conversation = null
             engine = null
             currentModelId = null
+            currentBackendMode = null
             _engineState.value = EngineState.UNINITIALIZED
             runCatching { convToClose?.close() }
             runCatching { engineToClose?.close() }
@@ -196,49 +275,49 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
         tools: List<LocalTool>,
     ): String = withContext(Dispatchers.IO) {
         idleReleaseJob?.cancel()
-        try {
-            val currentEngine = engine ?: throw IllegalStateException("Engine not initialized")
+        val currentEngine = engine ?: throw IllegalStateException("Engine not initialized")
 
-            val lastUserIndex = messages.indexOfLast { it.role == "user" }
-            if (lastUserIndex < 0) throw IllegalStateException("No user message found")
+        val lastUserIndex = messages.indexOfLast { it.role == "user" }
+        if (lastUserIndex < 0) throw IllegalStateException("No user message found")
 
-            val sanitizedSystemPrompt = sanitizeForLiteRt(systemPrompt)
-            val initialMessages = messages.subList(0, lastUserIndex).map { msg ->
-                val sanitized = sanitizeForLiteRt(msg.content) ?: ""
-                when (msg.role) {
-                    "user" -> Message.user(sanitized)
-                    else -> Message.model(sanitized)
-                }
+        val sanitizedSystemPrompt = sanitizeForLiteRt(systemPrompt)
+        val initialMessages = messages.subList(0, lastUserIndex).map { msg ->
+            val sanitized = sanitizeForLiteRt(msg.content) ?: ""
+            when (msg.role) {
+                "user" -> Message.user(sanitized)
+                else -> Message.model(sanitized)
             }
-
-            val toolProviders = tools.map { tool(LocalToolOpenApiAdapter(it)) }
-            val config = ConversationConfig(
-                systemInstruction = sanitizedSystemPrompt?.let { Contents.of(it) },
-                initialMessages = initialMessages,
-                tools = toolProviders,
-                samplerConfig = SamplerConfig(topK = 40, topP = 0.95, temperature = 0.8),
-                // automaticToolCalling = true drives the parser; only enable when we
-                // actually have tools, otherwise plain-text responses get parsed as FCs.
-                automaticToolCalling = toolProviders.isNotEmpty(),
-            )
-            val prev = conversation
-            conversation = null
-            runCatching { prev?.close() }
-            val conv = currentEngine.createConversation(config)
-            conversation = conv
-
-            val lastMessage = sanitizeForLiteRt(messages[lastUserIndex].content) ?: ""
-            val response = try {
-                withTimeout(INFERENCE_TIMEOUT_MS.milliseconds) {
-                    conv.sendMessage(lastMessage)
-                }
-            } catch (e: TimeoutCancellationException) {
-                throw InferenceTimeoutException()
-            }
-            stripThinkBlocks(response.toString())
-        } finally {
-            scheduleIdleRelease()
         }
+
+        val toolProviders = tools.map { tool(LocalToolOpenApiAdapter(it)) }
+        val config = ConversationConfig(
+            systemInstruction = sanitizedSystemPrompt?.let { Contents.of(it) },
+            initialMessages = initialMessages,
+            tools = toolProviders,
+            samplerConfig = SamplerConfig(topK = 40, topP = 0.95, temperature = 0.8),
+            // automaticToolCalling = true drives the parser; only enable when we
+            // actually have tools, otherwise plain-text responses get parsed as FCs.
+            automaticToolCalling = toolProviders.isNotEmpty(),
+        )
+        val prev = conversation
+        conversation = null
+        runCatching { prev?.close() }
+        val conv = currentEngine.createConversation(config)
+        conversation = conv
+
+        val lastMessage = sanitizeForLiteRt(messages[lastUserIndex].content) ?: ""
+        val response = try {
+            println("LiteRT: sendMessage start model=$currentModelId backendMode=$currentBackendMode")
+            withTimeout(INFERENCE_TIMEOUT_MS.milliseconds) {
+                conv.sendMessage(lastMessage)
+            }.also {
+                println("LiteRT: sendMessage done model=$currentModelId backendMode=$currentBackendMode")
+            }
+        } catch (e: TimeoutCancellationException) {
+            println("LiteRT: sendMessage timeout model=$currentModelId backendMode=$currentBackendMode")
+            throw InferenceTimeoutException()
+        }
+        stripThinkBlocks(response.toString())
     }
 
     /**
@@ -275,16 +354,7 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
     // the user sees it. Safe for Gemma 4, which never emits these tags.
     private fun stripThinkBlocks(s: String): String = THINK_BLOCK_REGEX.replace(s, "").trim()
 
-    private fun scheduleIdleRelease() {
-        idleReleaseJob?.cancel()
-        idleReleaseJob = scope.launch {
-            delay(IDLE_RELEASE_MS.milliseconds)
-            release()
-        }
-    }
-
     companion object {
-        private const val IDLE_RELEASE_MS = 5L * 60 * 1000 // 5 minutes
         private const val INFERENCE_TIMEOUT_MS = 120_000L // 2 minutes
         private const val MIN_MEMORY_HEADROOM_BYTES = 512L * 1024 * 1024 // 512 MB
         private const val DOWNLOAD_SPACE_BUFFER_BYTES = 500L * 1024 * 1024 // 500 MB
@@ -295,7 +365,7 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
     override fun getDownloadedModels(): List<DownloadedModel> {
         val modelsDir = File(getModelStorageDirectory())
         if (!modelsDir.exists()) return emptyList()
-        return MODEL_CATALOG.mapNotNull { catalogModel ->
+        val catalogModels = MODEL_CATALOG.mapNotNull { catalogModel ->
             val modelDir = File(modelsDir, catalogModel.id)
             val modelFile = File(modelDir, catalogModel.fileName)
             if (modelFile.exists()) {
@@ -309,6 +379,23 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
                 null
             }
         }
+        val catalogPaths = catalogModels.map { it.filePath }.toSet()
+        val sideLoadedModels = modelsDir
+            .walkTopDown()
+            .maxDepth(2)
+            .filter { it.isFile && it.extension == "litertlm" && it.absolutePath !in catalogPaths }
+            .map { file ->
+                val id = file.parentFile?.name?.takeIf { it.isNotBlank() && it != modelsDir.name }
+                    ?: file.nameWithoutExtension
+                DownloadedModel(
+                    id = id,
+                    displayName = id.replace('-', ' ').replace('_', ' '),
+                    filePath = file.absolutePath,
+                    sizeBytes = file.length(),
+                )
+            }
+            .toList()
+        return catalogModels + sideLoadedModels
     }
 
     override fun getAvailableModels(): List<LocalModel> = MODEL_CATALOG
@@ -416,7 +503,13 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
                 release()
             }
             val modelDir = File(getModelStorageDirectory(), modelId)
-            modelDir.deleteRecursively()
+            if (modelDir.exists()) {
+                modelDir.deleteRecursively()
+            } else {
+                File(getModelStorageDirectory()).walkTopDown()
+                    .firstOrNull { it.isFile && it.extension == "litertlm" && it.nameWithoutExtension == modelId }
+                    ?.delete()
+            }
         }
     }
 }

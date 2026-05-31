@@ -20,7 +20,14 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 
-actual fun createSandboxController(): SandboxController = AndroidSandboxController()
+actual fun createSandboxController(): SandboxController {
+    val context: Context by inject(Context::class.java)
+    return if (shouldUseTermuxSandbox(context)) {
+        TermuxSandboxController()
+    } else {
+        AndroidSandboxController()
+    }
+}
 
 class AndroidSandboxController : SandboxController {
 

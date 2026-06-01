@@ -1,3 +1,6 @@
+This is a custom patched fork of the brilliant Kai 9000 apk by SimonSchubert. I opened up tool access for local models, and swapped out the Alpine sandbox for a similar one running inside Termux. For this to work the entire Termux Suite in use plus the Kai 9000 apk need to be signed with the same Key and the Kai 9000 apk needs its package name changed.
+Use this on your own risk, I am not responsible for any damages this is very much just personal project, don't expect regular maintenance. I just wanted to share this since it's working well for me :)
+
 # Kai 9000
 
 <img src="https://img.shields.io/badge/Platform-Web-f7df1c?logo=javascript" alt="Web"> <img src="https://img.shields.io/badge/Platform-Android-34a853.svg?logo=android" alt="Android" /> <img src="https://img.shields.io/badge/Platform-iOS-lightgrey.svg?logo=apple" alt="iOS" /> <img src="https://img.shields.io/badge/Platform-Windows/macOS/Linux-e10707.svg?logo=openjdk" alt="Platform JVM" />

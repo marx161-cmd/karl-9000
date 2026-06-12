@@ -28,6 +28,9 @@ import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
 
 val MODEL_CATALOG = listOf(
@@ -125,6 +128,7 @@ val MODEL_CATALOG = listOf(
 class LiteRTInferenceEngine : LocalInferenceEngine {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val logLock = Any()
     private var downloadJob: Job? = null
     private var idleReleaseJob: Job? = null
 
@@ -163,6 +167,7 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
             _engineState.value = EngineState.INITIALIZING
             try {
                 val modelFile = File(model.filePath)
+                logLiteRT("initialize requested model=${model.id} path=${model.filePath} size=${modelFile.length()} contextTokens=$contextTokens backendMode=$backendMode")
                 if (!modelFile.exists() || modelFile.length() < 1_000_000) {
                     throw IllegalStateException("Model file missing or too small: ${model.filePath}")
                 }
@@ -173,6 +178,7 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
                 val hadExistingEngine = engine != null
                 release()
                 _engineState.value = EngineState.INITIALIZING
+                logLiteRT("previous engine released hadExistingEngine=$hadExistingEngine")
 
                 if (hadExistingEngine) {
                     // engine.close() returns before the OpenCL driver actually reclaims the
@@ -181,52 +187,67 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
                     // beat to drain before allocating ~GB of new GPU buffers.
                     System.gc()
                     delay(GPU_DRAIN_DELAY_MS.milliseconds)
+                    logLiteRT("GPU drain delay complete delayMs=$GPU_DRAIN_DELAY_MS")
                 }
 
                 val availMem = getAvailableMemoryBytes()
+                logLiteRT("memory check availableBytes=$availMem minRequiredBytes=$MIN_MEMORY_HEADROOM_BYTES")
                 if (availMem < MIN_MEMORY_HEADROOM_BYTES) {
                     throw InsufficientMemoryException()
                 }
 
                 fun initWithBackend(backend: Backend, maxTokens: Int?): Engine {
+                    val backendName = backend.toString()
+                    val startedAt = System.currentTimeMillis()
+                    logLiteRT("engine config start backend=$backendName maxNumTokens=$maxTokens cacheDir=${getModelCacheDirectory()}")
                     val config = EngineConfig(
                         modelPath = model.filePath,
                         backend = backend,
                         cacheDir = getModelCacheDirectory(),
                         maxNumTokens = maxTokens,
                     )
+                    logLiteRT("engine object create start backend=$backendName")
                     val e = Engine(config)
-                    e.initialize()
+                    logLiteRT("engine initialize start backend=$backendName")
+                    try {
+                        e.initialize()
+                        logLiteRT("engine initialize done backend=$backendName elapsedMs=${System.currentTimeMillis() - startedAt}")
+                    } catch (t: Throwable) {
+                        logLiteRT("engine initialize failed backend=$backendName elapsedMs=${System.currentTimeMillis() - startedAt}: ${t.message}", t)
+                        runCatching { e.close() }
+                        throw t
+                    }
                     return e
                 }
 
                 val requestedTokens = if (contextTokens > 0) contextTokens else null
-                println("LiteRT: initializing model=${model.id} maxNumTokens=$requestedTokens backendMode=$backendMode")
+                logLiteRT("initializing model=${model.id} maxNumTokens=$requestedTokens backendMode=$backendMode")
 
                 val newEngine = try {
                     when (backendMode) {
                         LocalInferenceBackendMode.GPU -> initWithBackend(Backend.GPU(), requestedTokens)
                         LocalInferenceBackendMode.CPU -> initWithBackend(Backend.CPU(), requestedTokens)
                         LocalInferenceBackendMode.AUTO -> try {
-                            println("LiteRT: trying GPU backend")
+                            logLiteRT("trying GPU backend")
                             initWithBackend(Backend.GPU(), requestedTokens)
                         } catch (e: Exception) {
-                            println("LiteRT: GPU init failed (${e.message?.take(200)}), trying CPU backend")
+                            logLiteRT("GPU init failed (${e.message?.take(200)}), trying CPU backend", e)
                             initWithBackend(Backend.CPU(), requestedTokens)
                         }
                     }
                 } catch (e: Exception) {
                     // Context size not supported — retry with model default
-                    println("LiteRT: init failed with maxNumTokens=$requestedTokens, falling back to default: ${e.message}")
-                    if (requestedTokens != null) {
+                    logLiteRT("init failed with maxNumTokens=$requestedTokens: ${e.message}", e)
+                    if (requestedTokens != null && e.isContextTokenFailure()) {
+                        logLiteRT("retrying with model default context")
                         when (backendMode) {
                             LocalInferenceBackendMode.GPU -> initWithBackend(Backend.GPU(), null)
                             LocalInferenceBackendMode.CPU -> initWithBackend(Backend.CPU(), null)
                             LocalInferenceBackendMode.AUTO -> try {
-                                println("LiteRT: trying GPU backend with default context")
+                                logLiteRT("trying GPU backend with default context")
                                 initWithBackend(Backend.GPU(), null)
                             } catch (e2: Exception) {
-                                println("LiteRT: GPU init failed with default context (${e2.message?.take(200)}), trying CPU backend")
+                                logLiteRT("GPU init failed with default context (${e2.message?.take(200)}), trying CPU backend", e2)
                                 initWithBackend(Backend.CPU(), null)
                             }
                         }
@@ -241,8 +262,10 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
                 currentContextTokens = contextTokens
                 currentBackendMode = backendMode
                 _engineState.value = EngineState.READY
+                logLiteRT("engine ready model=${model.id} contextTokens=$contextTokens backendMode=$backendMode")
             } catch (e: Exception) {
                 _engineState.value = EngineState.ERROR
+                logLiteRT("initialize failed model=${model.id}: ${e.message}", e)
                 throw e
             }
         }
@@ -259,8 +282,14 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
             currentModelId = null
             currentBackendMode = null
             _engineState.value = EngineState.UNINITIALIZED
+            if (convToClose != null || engineToClose != null) {
+                logLiteRT("release start hadConversation=${convToClose != null} hadEngine=${engineToClose != null}")
+            }
             runCatching { convToClose?.close() }
             runCatching { engineToClose?.close() }
+            if (convToClose != null || engineToClose != null) {
+                logLiteRT("release done")
+            }
         }
     }
 
@@ -307,14 +336,14 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
 
         val lastMessage = sanitizeForLiteRt(messages[lastUserIndex].content) ?: ""
         val response = try {
-            println("LiteRT: sendMessage start model=$currentModelId backendMode=$currentBackendMode")
+            logLiteRT("sendMessage start model=$currentModelId backendMode=$currentBackendMode chars=${lastMessage.length}")
             withTimeout(INFERENCE_TIMEOUT_MS.milliseconds) {
                 conv.sendMessage(lastMessage)
             }.also {
-                println("LiteRT: sendMessage done model=$currentModelId backendMode=$currentBackendMode")
+                logLiteRT("sendMessage done model=$currentModelId backendMode=$currentBackendMode")
             }
         } catch (e: TimeoutCancellationException) {
-            println("LiteRT: sendMessage timeout model=$currentModelId backendMode=$currentBackendMode")
+            logLiteRT("sendMessage timeout model=$currentModelId backendMode=$currentBackendMode", e)
             throw InferenceTimeoutException()
         }
         stripThinkBlocks(response.toString())
@@ -359,7 +388,43 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
         private const val MIN_MEMORY_HEADROOM_BYTES = 512L * 1024 * 1024 // 512 MB
         private const val DOWNLOAD_SPACE_BUFFER_BYTES = 500L * 1024 * 1024 // 500 MB
         private const val GPU_DRAIN_DELAY_MS = 750L
+        private const val DIAGNOSTIC_LOG_FILE = "kai-litert.log"
+        private const val DIAGNOSTIC_LOG_MAX_BYTES = 2L * 1024L * 1024L
         private val THINK_BLOCK_REGEX = Regex("<think>.*?</think>", RegexOption.DOT_MATCHES_ALL)
+    }
+
+    private fun logLiteRT(message: String, throwable: Throwable? = null) {
+        val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())
+        val line = "LiteRT: $timestamp $message"
+        println(line)
+        synchronized(logLock) {
+            runCatching {
+                val logFile = File(File(getModelStorageDirectory()).parentFile, DIAGNOSTIC_LOG_FILE)
+                logFile.parentFile?.mkdirs()
+                if (logFile.exists() && logFile.length() > DIAGNOSTIC_LOG_MAX_BYTES) {
+                    logFile.writeText("")
+                }
+                logFile.appendText(line + "\n")
+                if (throwable != null) {
+                    logFile.appendText(throwable.stackTraceToString() + "\n")
+                }
+            }
+        }
+    }
+
+    private fun Throwable.isContextTokenFailure(): Boolean {
+        val text = generateSequence(this as Throwable?) { it.cause }
+            .mapNotNull { it.message }
+            .joinToString(" ")
+            .lowercase()
+
+        return listOf(
+            "maxnumtokens",
+            "max num tokens",
+            "context",
+            "token",
+            "kv cache",
+        ).any { it in text }
     }
 
     override fun getDownloadedModels(): List<DownloadedModel> {

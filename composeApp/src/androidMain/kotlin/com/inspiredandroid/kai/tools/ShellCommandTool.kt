@@ -17,11 +17,11 @@ import kai.composeapp.generated.resources.tool_execute_shell_command_description
 import kai.composeapp.generated.resources.tool_execute_shell_command_name
 import org.koin.java.KoinJavaComponent.inject
 
-private const val TOOL_DESCRIPTION = """Execute a shell command in an Alpine Linux sandbox and return stdout, stderr, exit code, and current working directory. The environment is a full Alpine Linux system running via proot.
+private const val TOOL_DESCRIPTION = """Execute a shell command in the app's Linux shell environment and return stdout, stderr, exit code, and current working directory. On the Termux-suite build this is normal Termux bash; on the standalone Android build this is the app-managed Alpine Linux sandbox.
 
 Shell session is PERSISTENT across calls within THIS conversation: cwd, exported environment variables, and any in-shell state carry from one call to the next, just like a normal terminal. So "cd /tmp" in one call, then "pwd" in the next, returns "/tmp". You do NOT need to chain "cd dir && command" unless you want directory changes to be one-shot. Other conversations and the in-app Terminal tab each have their own isolated shells; the rootfs and /root are still shared on disk, so files persist across all of them.
 
-Pre-installed: bash, python3 (pip), nodejs, git, curl, wget, jq, plus remote-server tools — ssh, scp, sftp (openssh-client), lftp (FTP/FTPS), rsync. Use them directly, e.g. "ssh user@host 'remote command'", "sftp user@host", "lftp -c 'open ftp://...; put file'". Authentication state (~/.ssh keys, known_hosts) persists.
+Commonly available tools include bash and whatever is installed in that environment, such as python, node, git, curl, wget, jq, ssh, scp, sftp, lftp, and rsync. Use "command -v <tool>" or package manager commands to verify availability before assuming a tool exists. Authentication state (~/.ssh keys, known_hosts) persists.
 
 Limits and behavior:
 - Output is capped at 15000 characters per stream; for large output, pipe through head/tail.
@@ -30,9 +30,9 @@ Limits and behavior:
 - Set background=true to run a long-lived process detached from the shell (writes to its own session_id). Use manage_process to check on it.
 - Set fresh=true to run in a one-shot isolated shell that doesn't share state with the persistent session. Useful when you specifically want isolation; rarely needed.
 
-Install extra packages with: apk add <package>
+Install extra packages with the environment's package manager: pkg/apt in Termux, apk in the standalone Alpine sandbox.
 
-To show a file you produced in /root to the user, call open_file with the path relative to /root (e.g. open_file path="page.html"). File needs to be self-contained."""
+To show a file you produced in the environment home to the user, call open_file with the path relative to /root (e.g. open_file path="page.html"). In the Termux-suite build, /root maps to Termux home for compatibility. File needs to be self-contained."""
 
 object ShellCommandTool : Tool {
     private val sandboxManager: LinuxSandboxManager by inject(LinuxSandboxManager::class.java)

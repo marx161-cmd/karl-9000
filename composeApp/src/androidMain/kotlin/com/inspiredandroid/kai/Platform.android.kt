@@ -40,6 +40,7 @@ import com.inspiredandroid.kai.tools.NotificationResult
 import com.inspiredandroid.kai.tools.NotificationTools
 import com.inspiredandroid.kai.tools.OpenFileTool
 import com.inspiredandroid.kai.tools.ProcessManagerTool
+import com.inspiredandroid.kai.tools.RequestRootAccessTool
 import com.inspiredandroid.kai.tools.SchedulingTools
 import com.inspiredandroid.kai.tools.ShellCommandTool
 import com.inspiredandroid.kai.tools.SmsTools
@@ -214,6 +215,7 @@ actual fun getPlatformToolDefinitions(): List<ToolInfo> = buildList {
             descriptionRes = Res.string.tool_open_file_description,
         ),
     )
+    add(RequestRootAccessTool.toolInfo)
     // SMS tools are intentionally absent here: availability is driven by the Agent-tab
     // master toggles (isSmsEnabled / isSmsSendEnabled) plus the FOSS-only `isSmsSupported`
     // check in `getAvailableTools()`. Listing per-tool toggles in the Tools tab was dead
@@ -424,6 +426,9 @@ actual fun getAvailableTools(): List<Tool> {
         if (appSettings.isSandboxEnabled()) {
             add(ShellCommandTool)
             add(ProcessManagerTool)
+            if (shouldUseTermuxSandbox(context) && appSettings.isToolEnabled(RequestRootAccessTool.schema.name)) {
+                add(RequestRootAccessTool)
+            }
         }
 
         if (appSettings.isEmailEnabled()) {

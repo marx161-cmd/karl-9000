@@ -34,6 +34,35 @@ private val TERMUX_RS = 0x1e.toChar().toString()
 private val TERMUX_US = 0x1f.toChar().toString()
 private val TERMUX_PID_PREFIX = "${TERMUX_RS}KAIBASHPID$TERMUX_US"
 
+internal fun blockedRootCommandReason(command: String): String? {
+    val normalized = command
+        .replace('\n', ' ')
+        .replace('\r', ' ')
+        .trim()
+    val destructiveSystem = Regex("""(^|[;&|(){}\s])(reboot|shutdown|fastboot|flash_image)(\s|[;&|()]|$)""")
+    val blockDeviceWrite = Regex("""(^|[;&|(){}\s])(mkfs(\.[A-Za-z0-9_+-]+)?|dd\s+[^;&|]*\b(if|of)=/dev/block)(\s|[;&|()]|$)""")
+    return when {
+        destructiveSystem.containsMatchIn(normalized) ->
+            "System power/bootloader commands are blocked in the Termux shell."
+        blockDeviceWrite.containsMatchIn(normalized) ->
+            "Block-device formatting or raw block-device dd commands are blocked in the Termux shell."
+        else -> null
+    }
+}
+
+private fun blockedTermuxCommandReason(command: String): String? {
+    val normalized = command
+        .replace('\n', ' ')
+        .replace('\r', ' ')
+        .trim()
+    val rootEscalation = Regex("""(^|[;&|(){}\s])(sudo\s+su|sudo|su|tsu|magisk)(\s|[;&|()]|$)""")
+    return when {
+        rootEscalation.containsMatchIn(normalized) ->
+            "Root escalation is blocked in the Termux shell. Use request_root_access for a one-shot audited root command."
+        else -> blockedRootCommandReason(normalized)
+    }
+}
+
 internal class TermuxCommandHandle(
     private val process: Process,
     private val cancelled: AtomicBoolean,
@@ -65,6 +94,17 @@ internal class TermuxShellExecutor {
     fun execute(command: String, timeoutSeconds: Long = 30L): Map<String, Any> {
         if (!isAvailable()) {
             return mapOf("success" to false, "error" to "Termux bash is not executable from this Kai build")
+        }
+        blockedTermuxCommandReason(command)?.let { reason ->
+            return mapOf(
+                "success" to false,
+                "stdout" to "",
+                "stderr" to reason,
+                "exit_code" to -1,
+                "timed_out" to false,
+                "backend" to "termux",
+                "blocked" to true,
+            )
         }
         val process = Runtime.getRuntime().exec(buildArgs(command), buildEnv(), File(TERMUX_HOME))
         val stdoutFuture = CompletableFuture.supplyAsync { readBounded(process.inputStream.bufferedReader()) }
@@ -101,6 +141,10 @@ internal class TermuxShellExecutor {
             onStderr("Termux bash is not executable from this Kai build")
             return NoOpCommandHandle
         }
+        blockedTermuxCommandReason(command)?.let { reason ->
+            onStderr(reason)
+            return NoOpCommandHandle
+        }
         val process = Runtime.getRuntime().exec(buildArgs(command), buildEnv(), File(TERMUX_HOME))
         val cancelled = AtomicBoolean(false)
         val exit = CompletableDeferred<Int>()
@@ -112,20 +156,53 @@ internal class TermuxShellExecutor {
         return TermuxCommandHandle(process, cancelled, exit)
     }
 
+    fun executeApprovedRoot(command: String, timeoutSeconds: Long = 30L): Map<String, Any> {
+        if (!isAvailable()) {
+            return mapOf("success" to false, "error" to "Termux bash is not executable from this Kai build")
+        }
+        blockedRootCommandReason(command)?.let { reason ->
+            return mapOf(
+                "success" to false,
+                "stdout" to "",
+                "stderr" to reason,
+                "exit_code" to -1,
+                "timed_out" to false,
+                "backend" to "termux-root",
+                "blocked" to true,
+            )
+        }
+        val rootCommand = "su -c ${shellSingleQuote(command)}"
+        val process = Runtime.getRuntime().exec(buildArgs(rootCommand), buildEnv(), File(TERMUX_HOME))
+        val stdoutFuture = CompletableFuture.supplyAsync { readBounded(process.inputStream.bufferedReader()) }
+        val stderrFuture = CompletableFuture.supplyAsync { readBounded(process.errorStream.bufferedReader()) }
+        val completed = process.waitFor(timeoutSeconds.coerceIn(1, 180), TimeUnit.SECONDS)
+        if (!completed) {
+            process.destroyForcibly()
+            return mapOf(
+                "success" to false,
+                "stdout" to stdoutFuture.get(1, TimeUnit.SECONDS),
+                "stderr" to stderrFuture.get(1, TimeUnit.SECONDS),
+                "exit_code" to -1,
+                "timed_out" to true,
+                "backend" to "termux-root",
+            )
+        }
+        val exit = process.exitValue()
+        return mapOf(
+            "success" to (exit == 0),
+            "stdout" to stdoutFuture.get(),
+            "stderr" to stderrFuture.get(),
+            "exit_code" to exit,
+            "timed_out" to false,
+            "backend" to "termux-root",
+        )
+    }
+
     private fun buildArgs(command: String): Array<String> = arrayOf(TERMUX_BASH, "-lc", termuxCommand(command))
 
     private fun termuxCommand(command: String): String {
         val quoted = shellSingleQuote(command)
-        return """
-            if command -v proot-distro >/dev/null 2>&1; then
-              for distro in kai alpine; do
-                if proot-distro login "${'$'}distro" -- true >/dev/null 2>&1; then
-                  exec proot-distro login "${'$'}distro" -- bash -lc $quoted
-                fi
-              done
-            fi
-            exec bash -lc $quoted
-        """.trimIndent()
+        return "exec bash -lc $quoted"
     }
 
     private fun buildEnv(): Array<String> = arrayOf(
@@ -241,6 +318,7 @@ internal class TermuxPersistentShell(
 
     @Volatile private var handle: CommandHandle? = null
     @Volatile private var bashPid: Int? = null
+    @Volatile private var bootstrapReady: CompletableDeferred<Boolean>? = null
     private val currentSink = AtomicReference<CommandSink?>(null)
 
     private class CommandSink(
@@ -265,7 +343,31 @@ internal class TermuxPersistentShell(
         onStdout: ((String) -> Unit)? = null,
         onStderr: ((String) -> Unit)? = null,
     ): Map<String, Any> = mutex.withLock {
-        ensureShell()
+        blockedTermuxCommandReason(command)?.let { reason ->
+            return@withLock mapOf(
+                "success" to false,
+                "stdout" to "",
+                "stderr" to reason,
+                "exit_code" to -1,
+                "timed_out" to false,
+                "backend" to "termux",
+                "cwd" to "/root",
+                "blocked" to true,
+            )
+        }
+        if (!ensureShell()) {
+            reset()
+            return@withLock mapOf(
+                "success" to false,
+                "stdout" to "",
+                "stderr" to "Termux shell did not finish startup. Check bash in Termux.",
+                "exit_code" to -1,
+                "timed_out" to false,
+                "backend" to "termux",
+                "cwd" to "/root",
+                "shell_died" to true,
+            )
+        }
         val nonce = randomNonce()
         val sink = CommandSink(nonce = nonce, onStdout = onStdout, onStderr = onStderr)
         currentSink.set(sink)
@@ -315,13 +417,20 @@ internal class TermuxPersistentShell(
         handle?.cancel()
         handle = null
         bashPid = null
+        bootstrapReady = null
         currentSink.getAndSet(null)?.done?.complete(
             Result(exitCode = -1, cwd = "/root", bashPid = 0, shellDied = true),
         )
     }
 
-    private fun ensureShell() {
-        if (handle != null) return
+    private suspend fun ensureShell(): Boolean {
+        if (handle != null && bashPid != null) return true
+        if (handle != null) {
+            val ready = bootstrapReady ?: return true
+            return withTimeoutOrNull(5.seconds) { ready.await() } == true
+        }
+        val ready = CompletableDeferred<Boolean>()
+        bootstrapReady = ready
         val h = executor.executeStreaming(
             command = "exec bash --noprofile --norc",
             onStdout = { line -> dispatchStdout(line) },
@@ -333,12 +442,15 @@ internal class TermuxPersistentShell(
         }
         scope.launch {
             h.awaitExit()
+            ready.complete(false)
             currentSink.getAndSet(null)?.done?.complete(
                 Result(exitCode = -1, cwd = "/root", bashPid = bashPid ?: 0, shellDied = true),
             )
             handle = null
             bashPid = null
+            bootstrapReady = null
         }
+        return withTimeoutOrNull(5.seconds) { ready.await() } == true
     }
 
     private fun dispatchStdout(line: String) {
@@ -351,7 +463,10 @@ internal class TermuxPersistentShell(
         if (line.isEmpty()) return
         if (line.startsWith(TERMUX_PID_PREFIX) && line.endsWith(TERMUX_RS)) {
             val pidText = line.substring(TERMUX_PID_PREFIX.length, line.length - 1)
-            pidText.toIntOrNull()?.let { bashPid = it }
+            pidText.toIntOrNull()?.let {
+                bashPid = it
+                bootstrapReady?.complete(true)
+            }
             return
         }
         val sink = currentSink.get() ?: return
@@ -410,17 +525,17 @@ class TermuxSandboxController : SandboxController {
     private val _status = MutableStateFlow(
         if (executor.isAvailable()) {
             SandboxStatus(
-                environmentName = "Termux Alpine",
+                environmentName = "Termux",
                 installed = true,
                 ready = true,
-                statusText = "Termux Alpine ready",
+                statusText = "Termux ready",
                 packagesInstalled = true,
                 resetAvailable = false,
                 packageManagerAvailable = false,
             )
         } else {
             SandboxStatus(
-                environmentName = "Termux Alpine",
+                environmentName = "Termux",
                 error = true,
                 statusText = "Termux is not reachable",
                 resetAvailable = false,
@@ -434,10 +549,10 @@ class TermuxSandboxController : SandboxController {
 
     override fun setup() {
         _status.value = SandboxStatus(
-            environmentName = "Termux Alpine",
+            environmentName = "Termux",
             installed = true,
             ready = executor.isAvailable(),
-            statusText = "Termux Alpine ready",
+            statusText = "Termux ready",
             packagesInstalled = true,
             resetAvailable = false,
             packageManagerAvailable = false,

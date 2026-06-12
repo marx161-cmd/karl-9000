@@ -35,6 +35,8 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.jetbrains.compose.resources.getString
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration.Companion.seconds
@@ -61,6 +63,7 @@ class ChatViewModel(
         deleteConversation = ::deleteConversation,
         clearUnreadHeartbeat = ::clearUnreadHeartbeat,
         clearSnackbar = ::clearSnackbar,
+        cancelPendingMessage = ::cancelPendingMessage,
         undoDeleteConversation = ::undoDeleteConversation,
         submitUiCallback = ::submitUiCallback,
         resubmit = ::resubmit,
@@ -73,6 +76,8 @@ class ChatViewModel(
     private val freeModeNames: Map<FreeMode, String> = FreeMode.entries.associateWith { "Free ${it.modelId.replaceFirstChar { c -> c.uppercase() }}" }
     private var currentJob: Job? = null
     private var pendingConversationDeleteJob: Job? = null
+    private val pendingMessageMutex = Mutex()
+    private val pendingMessages = MutableStateFlow<List<String>>(emptyList())
     private val _state = MutableStateFlow(
         ChatUiState(
             actions = actions,
@@ -81,6 +86,7 @@ class ChatViewModel(
     )
 
     init {
+        dataRepository.setPendingUserMessageDrain(::drainPendingForModel)
         updateAvailableServices()
 
         // Keep restoreCurrentConversation off the main thread; see issue #197 (large persisted
@@ -107,6 +113,12 @@ class ChatViewModel(
         viewModelScope.launch {
             dataRepository.smsDrafts.collect { drafts ->
                 _state.update { it.copy(smsDrafts = drafts.toImmutableList()) }
+            }
+        }
+
+        viewModelScope.launch {
+            pendingMessages.collect { pending ->
+                _state.update { it.copy(pendingMessages = pending.toImmutableList()) }
             }
         }
 
@@ -177,8 +189,10 @@ class ChatViewModel(
     }
 
     private fun askInternal(question: String?, uiSubmission: UiSubmission?) {
-        // Prevent concurrent requests
-        if (_state.value.isLoading) return
+        if (_state.value.isLoading) {
+            question?.trim()?.takeIf { it.isNotBlank() }?.let { enqueuePendingMessage(it) }
+            return
+        }
 
         // Capture files before launching coroutine to avoid race with files being cleared
         val files = _state.value.files
@@ -192,11 +206,21 @@ class ChatViewModel(
                 )
             }
             try {
-                dataRepository.ask(question, files, uiSubmission)
+                var nextQuestion = question
+                var nextFiles = files
+                var nextSubmission = uiSubmission
+                while (true) {
+                    dataRepository.ask(nextQuestion, nextFiles, nextSubmission)
 
-                // Auto-retry in interactive mode if the response has no valid kai-ui
-                if (_state.value.isInteractiveMode) {
-                    retryIfNoValidKaiUi()
+                    // Auto-retry in interactive mode if the response has no valid kai-ui
+                    if (_state.value.isInteractiveMode) {
+                        retryIfNoValidKaiUi()
+                    }
+
+                    val queued = drainPendingForFollowUp() ?: break
+                    nextQuestion = queued
+                    nextFiles = persistentListOf()
+                    nextSubmission = null
                 }
 
                 _state.update {
@@ -300,6 +324,7 @@ class ChatViewModel(
     private fun cancel() {
         currentJob?.cancel()
         currentJob = null
+        pendingMessages.value = emptyList()
         _state.update {
             it.copy(isLoading = false)
         }
@@ -365,6 +390,7 @@ class ChatViewModel(
     private fun loadConversation(id: String) {
         currentJob?.cancel()
         currentJob = null
+        pendingMessages.value = emptyList()
         val conversation = dataRepository.savedConversations.value.find { it.id == id }
         val isInteractive = conversation?.type == Conversation.TYPE_INTERACTIVE
         dataRepository.setInteractiveMode(isInteractive)
@@ -401,6 +427,7 @@ class ChatViewModel(
     }
 
     override fun onCleared() {
+        dataRepository.setPendingUserMessageDrain(null)
         commitPendingConversationDeletion()
         // The scheduler lives longer than this ViewModel (it's a singleton driving the
         // Android foreground service). Reset the predicate so the daemon path keeps
@@ -409,6 +436,31 @@ class ChatViewModel(
         // on Android — ViewModel lifecycle is too narrow (survives backgrounding).
         taskScheduler.isLoadingCheck = { false }
         super.onCleared()
+    }
+
+    private fun enqueuePendingMessage(text: String) {
+        pendingMessages.update { it + text }
+    }
+
+    private fun cancelPendingMessage(index: Int) {
+        pendingMessages.update { list ->
+            if (index in list.indices) list.toMutableList().apply { removeAt(index) } else list
+        }
+    }
+
+    private suspend fun drainPendingForModel(): String? = pendingMessageMutex.withLock {
+        drainPendingLocked()
+    }
+
+    private suspend fun drainPendingForFollowUp(): String? = pendingMessageMutex.withLock {
+        drainPendingLocked()
+    }
+
+    private fun drainPendingLocked(): String? {
+        val queued = pendingMessages.value
+        if (queued.isEmpty()) return null
+        pendingMessages.value = emptyList()
+        return queued.joinToString("\n\n")
     }
 
     private fun clearUnreadHeartbeat() {
@@ -430,6 +482,7 @@ class ChatViewModel(
     private fun startNewChat() {
         currentJob?.cancel()
         currentJob = null
+        pendingMessages.value = emptyList()
         dataRepository.startNewChat()
         dataRepository.setInteractiveMode(false)
         _state.update {
@@ -438,6 +491,7 @@ class ChatViewModel(
     }
 
     private fun enterInteractiveMode() {
+        pendingMessages.value = emptyList()
         dataRepository.startNewChat()
         dataRepository.setInteractiveMode(true)
         _state.update {
@@ -448,6 +502,7 @@ class ChatViewModel(
     private fun exitInteractiveMode() {
         currentJob?.cancel()
         currentJob = null
+        pendingMessages.value = emptyList()
         dataRepository.startNewChat()
         dataRepository.setInteractiveMode(false)
         _state.update {

@@ -218,6 +218,9 @@ fun QuestionInput(
                         )
                     }
                     if (isLoading) {
+                        if (textState.text.isNotBlank()) {
+                            TrailingIcon(icon = Res.drawable.ic_up, onClick = { submitQuestion() })
+                        }
                         TrailingIcon(icon = Res.drawable.ic_stop, onClick = cancel, isPulsing = true)
                     } else if (textState.text.isNotBlank()) {
                         TrailingIcon(icon = Res.drawable.ic_up, onClick = { submitQuestion() })

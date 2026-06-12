@@ -20,6 +20,7 @@ data class ChatActions(
     val deleteConversation: (String) -> Unit,
     val clearUnreadHeartbeat: () -> Unit,
     val clearSnackbar: () -> Unit,
+    val cancelPendingMessage: (Int) -> Unit,
     val undoDeleteConversation: () -> Unit,
     val submitUiCallback: (event: String, data: Map<String, String>) -> Unit,
     val resubmit: (messageId: String, event: String, data: Map<String, String>) -> Unit,

@@ -142,6 +142,7 @@ class RemoteDataRepository(
 ) : DataRepository {
 
     private val prettyJson = Json { prettyPrint = true }
+    private var pendingUserMessageDrain: (suspend () -> String?)? = null
 
     /**
      * Returns the tools exposed to the on-device (LiteRT) model. Safe mode filters by
@@ -784,6 +785,20 @@ class RemoteDataRepository(
         }
     }
 
+    override fun setPendingUserMessageDrain(drain: (suspend () -> String?)?) {
+        pendingUserMessageDrain = drain
+    }
+
+    private suspend fun drainPendingUserMessage(history: MutableStateFlow<List<History>>): Boolean {
+        val queued = pendingUserMessageDrain?.invoke()?.trim()?.takeIf { it.isNotBlank() } ?: return false
+        history.update {
+            it.toMutableList().apply {
+                add(History(role = History.Role.USER, content = queued))
+            }
+        }
+        return true
+    }
+
     private suspend fun handleOpenAICompatibleChatWithTools(
         service: Service,
         credentials: ServiceCredentials,
@@ -807,6 +822,16 @@ class RemoteDataRepository(
         // Loop until AI returns a final response (no more tool calls)
         while (true) {
             iteration++
+
+            if (drainPendingUserMessage(history)) {
+                currentMessages = trimMessagesForContext(
+                    buildOpenAIMessages(
+                        history.value.filter { it.role != History.Role.TOOL_EXECUTING },
+                        systemPrompt,
+                    ),
+                    contextWindowTokens,
+                )
+            }
 
             // Bail out if too many iterations
             if (iteration > MAX_TOOL_ITERATIONS) {

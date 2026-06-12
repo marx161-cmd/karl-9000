@@ -199,6 +199,10 @@ class FakeDataRepository : DataRepository {
         }
     }
 
+    override fun setPendingUserMessageDrain(drain: (suspend () -> String?)?) {
+        // No-op in tests unless a test explicitly verifies repository-driven draining.
+    }
+
     override fun clearHistory() {
         clearHistoryCalls++
         chatHistory.value = emptyList()

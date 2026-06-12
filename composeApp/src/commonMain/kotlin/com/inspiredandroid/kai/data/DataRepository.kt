@@ -41,6 +41,7 @@ interface DataRepository {
     suspend fun validateConnection(service: Service, instanceId: String)
 
     suspend fun ask(question: String?, files: List<PlatformFile>, uiSubmission: UiSubmission? = null)
+    fun setPendingUserMessageDrain(drain: (suspend () -> String?)?)
     fun clearHistory()
     fun currentService(): Service
     fun isUsingSharedKey(): Boolean

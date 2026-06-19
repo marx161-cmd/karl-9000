@@ -111,6 +111,10 @@ interface DataRepository {
     // Linux Sandbox
     fun isSandboxEnabled(): Boolean
     fun setSandboxEnabled(enabled: Boolean)
+    fun isTermuxRootShellEnabled(): Boolean
+    fun setTermuxRootShellEnabled(enabled: Boolean)
+    fun isPhoneRagContextEnabled(): Boolean
+    fun setPhoneRagContextEnabled(enabled: Boolean)
 
     // Heartbeat
     fun getHeartbeatConfig(): HeartbeatConfig

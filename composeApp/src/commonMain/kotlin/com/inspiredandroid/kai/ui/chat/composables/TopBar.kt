@@ -8,8 +8,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -51,6 +54,12 @@ internal fun TopBar(
     isSandboxOpen: Boolean,
     isShellExecuting: Boolean,
     onToggleSandbox: () -> Unit,
+    isTermuxRootShellEnabled: Boolean = false,
+    showRootShellToggle: Boolean = false,
+    onToggleTermuxRootShell: () -> Unit = {},
+    isPhoneRagContextEnabled: Boolean = false,
+    showPhoneRagContextToggle: Boolean = false,
+    onTogglePhoneRagContext: () -> Unit = {},
     onShowHistory: () -> Unit,
     navigationTabBar: (@Composable () -> Unit)? = null,
 ) {
@@ -59,7 +68,25 @@ internal fun TopBar(
             modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 64.dp),
         ) {
             Row(modifier = Modifier.align(Alignment.CenterStart)) {
-                LeadingButtons(textToSpeech, isSpeechOutputEnabled, isSpeaking, actions, isChatHistoryEmpty, hasSavedConversations, onShowHistory, isSandboxAvailable, isSandboxOpen, isShellExecuting, onToggleSandbox)
+                LeadingButtons(
+                    textToSpeech = textToSpeech,
+                    isSpeechOutputEnabled = isSpeechOutputEnabled,
+                    isSpeaking = isSpeaking,
+                    actions = actions,
+                    isChatHistoryEmpty = isChatHistoryEmpty,
+                    hasSavedConversations = hasSavedConversations,
+                    onShowHistory = onShowHistory,
+                    isSandboxAvailable = isSandboxAvailable,
+                    isSandboxOpen = isSandboxOpen,
+                    isShellExecuting = isShellExecuting,
+                    onToggleSandbox = onToggleSandbox,
+                    isTermuxRootShellEnabled = isTermuxRootShellEnabled,
+                    showRootShellToggle = showRootShellToggle,
+                    onToggleTermuxRootShell = onToggleTermuxRootShell,
+                    isPhoneRagContextEnabled = isPhoneRagContextEnabled,
+                    showPhoneRagContextToggle = showPhoneRagContextToggle,
+                    onTogglePhoneRagContext = onTogglePhoneRagContext,
+                )
             }
             Box(modifier = Modifier.align(Alignment.Center)) {
                 navigationTabBar()
@@ -72,7 +99,25 @@ internal fun TopBar(
         }
     } else {
         Row {
-            LeadingButtons(textToSpeech, isSpeechOutputEnabled, isSpeaking, actions, isChatHistoryEmpty, hasSavedConversations, onShowHistory, isSandboxAvailable, isSandboxOpen, isShellExecuting, onToggleSandbox)
+            LeadingButtons(
+                textToSpeech = textToSpeech,
+                isSpeechOutputEnabled = isSpeechOutputEnabled,
+                isSpeaking = isSpeaking,
+                actions = actions,
+                isChatHistoryEmpty = isChatHistoryEmpty,
+                hasSavedConversations = hasSavedConversations,
+                onShowHistory = onShowHistory,
+                isSandboxAvailable = isSandboxAvailable,
+                isSandboxOpen = isSandboxOpen,
+                isShellExecuting = isShellExecuting,
+                onToggleSandbox = onToggleSandbox,
+                isTermuxRootShellEnabled = isTermuxRootShellEnabled,
+                showRootShellToggle = showRootShellToggle,
+                onToggleTermuxRootShell = onToggleTermuxRootShell,
+                isPhoneRagContextEnabled = isPhoneRagContextEnabled,
+                showPhoneRagContextToggle = showPhoneRagContextToggle,
+                onTogglePhoneRagContext = onTogglePhoneRagContext,
+            )
             Spacer(Modifier.weight(1f))
             if (textToSpeech != null) {
                 SpeechToggleButton(textToSpeech, isSpeechOutputEnabled, isSpeaking, actions)
@@ -104,6 +149,12 @@ private fun LeadingButtons(
     isSandboxOpen: Boolean,
     isShellExecuting: Boolean,
     onToggleSandbox: () -> Unit,
+    isTermuxRootShellEnabled: Boolean = false,
+    showRootShellToggle: Boolean = false,
+    onToggleTermuxRootShell: () -> Unit = {},
+    isPhoneRagContextEnabled: Boolean = false,
+    showPhoneRagContextToggle: Boolean = false,
+    onTogglePhoneRagContext: () -> Unit = {},
 ) {
     if (hasSavedConversations) {
         IconButton(
@@ -164,6 +215,52 @@ private fun LeadingButtons(
                 contentDescription = stringResource(Res.string.sandbox_content_description),
                 tint = if (isSandboxOpen) {
                     MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onBackground
+                },
+            )
+        }
+    }
+    if (showRootShellToggle) {
+        val primary = MaterialTheme.colorScheme.primary
+        val checkedContainer = primary.copy(alpha = 0.2f)
+        IconToggleButton(
+            checked = isTermuxRootShellEnabled,
+            onCheckedChange = { onToggleTermuxRootShell() },
+            modifier = Modifier.handCursor().size(32.dp),
+            colors = IconButtonDefaults.iconToggleButtonColors(
+                checkedContainerColor = checkedContainer,
+                checkedContentColor = primary,
+            ),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Shield,
+                contentDescription = "Root shell access",
+                tint = if (isTermuxRootShellEnabled) {
+                    primary
+                } else {
+                    MaterialTheme.colorScheme.onBackground
+                },
+            )
+        }
+    }
+    if (showPhoneRagContextToggle) {
+        val primary = MaterialTheme.colorScheme.primary
+        val checkedContainer = primary.copy(alpha = 0.2f)
+        IconToggleButton(
+            checked = isPhoneRagContextEnabled,
+            onCheckedChange = { onTogglePhoneRagContext() },
+            modifier = Modifier.handCursor().size(32.dp),
+            colors = IconButtonDefaults.iconToggleButtonColors(
+                checkedContainerColor = checkedContainer,
+                checkedContentColor = primary,
+            ),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Storage,
+                contentDescription = "Phone RAG context injection",
+                tint = if (isPhoneRagContextEnabled) {
+                    primary
                 } else {
                     MaterialTheme.colorScheme.onBackground
                 },

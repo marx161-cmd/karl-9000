@@ -18,7 +18,7 @@ object RequestRootAccessTool : Tool {
 
     override val schema = ToolSchema(
         name = "request_root_access",
-        description = """Request one-shot root execution for a specific command in Termux. Direct su/sudo/tsu use is blocked in execute_shell_command. First call creates a native Kai approval prompt for the user. After the user approves in Kai, call this tool again with the returned approval_id. The approval is one-shot and only works for the exact staged command/scope.""",
+        description = """Request one-shot audited root execution for a specific command in Termux. First call creates a native Kai approval prompt for the user. After the user approves in Kai, call this tool again with the returned approval_id. The approval is one-shot and only works for the exact staged command/scope. For frequent root use, ask the user to enable "Root shell access" in Settings or the chat top bar — then su/sudo/tsu will work directly in execute_shell_command.""",
         parameters = mapOf(
             "reason" to ParameterSchema("string", "Why root is required. Be specific and user-readable.", true),
             "command" to ParameterSchema("string", "The exact command to run as root after approval.", true),
@@ -145,7 +145,7 @@ object RequestRootAccessTool : Tool {
     val toolInfo = ToolInfo(
         id = "request_root_access",
         name = "Request Root Access",
-        description = "Request one-shot audited Termux root commands through a native approval prompt",
+        description = "Request one-shot audited Termux root commands through a native approval prompt. For persistent root, use the root shell toggle in Settings or the chat top bar.",
         isEnabled = false,
     )
 }

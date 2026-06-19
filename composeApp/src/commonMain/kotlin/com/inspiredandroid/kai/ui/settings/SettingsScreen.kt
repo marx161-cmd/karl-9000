@@ -333,6 +333,7 @@ fun SettingsScreen(
         actions = viewModel.actions,
         sandboxState = sandboxState,
         onToggleSandbox = sandboxViewModel::onToggleSandbox,
+        onToggleTermuxRootShell = sandboxViewModel::onToggleTermuxRootShell,
         onSetupSandbox = sandboxViewModel::onSetupSandbox,
         onCancelSandbox = sandboxViewModel::onCancelSandbox,
         onResetSandbox = sandboxViewModel::onResetSandbox,
@@ -348,6 +349,7 @@ fun SettingsScreenContent(
     actions: SettingsActions = SettingsActions.NoOp,
     sandboxState: SandboxUiState = SandboxUiState(),
     onToggleSandbox: (Boolean) -> Unit = {},
+    onToggleTermuxRootShell: (Boolean) -> Unit = {},
     onSetupSandbox: () -> Unit = {},
     onCancelSandbox: () -> Unit = {},
     onResetSandbox: () -> Unit = {},
@@ -487,6 +489,7 @@ fun SettingsScreenContent(
                                 SandboxSettingsCard(
                                     sandboxState = sandboxState,
                                     onToggleSandbox = onToggleSandbox,
+                                    onToggleTermuxRootShell = onToggleTermuxRootShell,
                                     onSetupSandbox = onSetupSandbox,
                                     onCancelSandbox = onCancelSandbox,
                                     onResetSandbox = onResetSandbox,
@@ -538,6 +541,7 @@ private fun TopBar(onNavigateBack: () -> Unit) {
 private fun SandboxSettingsCard(
     sandboxState: SandboxUiState,
     onToggleSandbox: (Boolean) -> Unit,
+    onToggleTermuxRootShell: (Boolean) -> Unit,
     onSetupSandbox: () -> Unit,
     onCancelSandbox: () -> Unit,
     onResetSandbox: () -> Unit,
@@ -577,6 +581,36 @@ private fun SandboxSettingsCard(
                 Switch(
                     checked = sandboxState.isSandboxEnabled,
                     onCheckedChange = onToggleSandbox,
+                )
+            }
+        }
+
+        if (sandboxState.sandboxReady && sandboxState.sandboxEnvironmentName == "Termux") {
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Root shell access",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Text(
+                        text = if (sandboxState.isTermuxRootShellEnabled) {
+                            "Root commands may run in the persistent Termux shell"
+                        } else {
+                            "Root escalation is blocked in shell sessions"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = sandboxState.isTermuxRootShellEnabled,
+                    onCheckedChange = onToggleTermuxRootShell,
                 )
             }
         }
@@ -938,7 +972,7 @@ private fun ServicesContent(uiState: SettingsUiState, actions: SettingsActions) 
                     onRemove = { actions.onRemoveService(entry.instanceId) },
                     isDragging = isDragging,
                     dragHandleModifier = if (entries.size >= 2) Modifier.draggableHandle() else null,
-                    localAvailableModels = persistentListOf(),
+                    localAvailableModels = uiState.localAvailableModels,
                     totalDeviceMemoryBytes = uiState.totalDeviceMemoryBytes,
                     localFreeSpaceBytes = uiState.localFreeSpaceBytes,
                     localDownloadingModelId = uiState.localDownloadingModelId,

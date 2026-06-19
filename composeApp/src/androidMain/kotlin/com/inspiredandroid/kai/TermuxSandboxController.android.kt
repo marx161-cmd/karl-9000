@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import com.inspiredandroid.kai.data.AppSettings
 import com.inspiredandroid.kai.sandbox.openFileWithIntent
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -58,10 +59,13 @@ private fun blockedTermuxCommandReason(command: String): String? {
     val rootEscalation = Regex("""(^|[;&|(){}\s])(sudo\s+su|sudo|su|tsu|magisk)(\s|[;&|()]|$)""")
     return when {
         rootEscalation.containsMatchIn(normalized) ->
-            "Root escalation is blocked in the Termux shell. Use request_root_access for a one-shot audited root command."
+            "Root escalation is blocked. Enable root shell access in Settings or use request_root_access for a one-shot audited root command."
         else -> blockedRootCommandReason(normalized)
     }
 }
+
+private fun blockedTermuxCommandReason(command: String, rootShellEnabled: Boolean): String? =
+    if (rootShellEnabled) blockedRootCommandReason(command) else blockedTermuxCommandReason(command)
 
 internal class TermuxCommandHandle(
     private val process: Process,
@@ -89,13 +93,16 @@ internal class TermuxCommandHandle(
 }
 
 internal class TermuxShellExecutor {
+    private val appSettings: AppSettings by inject(AppSettings::class.java)
+
     fun isAvailable(): Boolean = File(TERMUX_BASH).canExecute()
+    fun isRootShellEnabled(): Boolean = appSettings.isTermuxRootShellEnabled()
 
     fun execute(command: String, timeoutSeconds: Long = 30L): Map<String, Any> {
         if (!isAvailable()) {
             return mapOf("success" to false, "error" to "Termux bash is not executable from this Kai build")
         }
-        blockedTermuxCommandReason(command)?.let { reason ->
+        blockedTermuxCommandReason(command, appSettings.isTermuxRootShellEnabled())?.let { reason ->
             return mapOf(
                 "success" to false,
                 "stdout" to "",
@@ -141,7 +148,7 @@ internal class TermuxShellExecutor {
             onStderr("Termux bash is not executable from this Kai build")
             return NoOpCommandHandle
         }
-        blockedTermuxCommandReason(command)?.let { reason ->
+        blockedTermuxCommandReason(command, appSettings.isTermuxRootShellEnabled())?.let { reason ->
             onStderr(reason)
             return NoOpCommandHandle
         }
@@ -343,7 +350,7 @@ internal class TermuxPersistentShell(
         onStdout: ((String) -> Unit)? = null,
         onStderr: ((String) -> Unit)? = null,
     ): Map<String, Any> = mutex.withLock {
-        blockedTermuxCommandReason(command)?.let { reason ->
+        blockedTermuxCommandReason(command, executor.isRootShellEnabled())?.let { reason ->
             return@withLock mapOf(
                 "success" to false,
                 "stdout" to "",

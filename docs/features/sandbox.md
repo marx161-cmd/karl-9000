@@ -1,10 +1,14 @@
 # Linux Sandbox
 
-**Last verified:** 2026-05-06
+**Last verified:** 2026-06-18
 
 Kai ships a self-contained Alpine Linux environment on Android so the assistant — and the user, via the in-app Terminal — can run real shell commands. The agent can install packages, write and run scripts, hit the network, and reach external servers over SSH/SFTP/FTP. The sandbox runs the user-space `proot` runtime against an Alpine 3.21 minirootfs extracted into the app's private storage; no root or system access is required.
 
 The sandbox is **Android-only**. iOS, desktop, and web stubs return "not ready" for every operation.
+
+### Termux-suite variant
+
+On the Karl 9000 Termux-suite build (`com.termux.kai`), the sandbox is backed by Termux bash instead of the Alpine proot runtime. The Termux variant retains persistent per-session shells, file operations mapped to Termux home, and exposes a **Root shell access** toggle in Settings (Sandbox tab) and in the chat top bar (Shield icon next to the terminal toggle). When root shell access is enabled, the assistant may use `su`, `sudo`, or `tsu` directly in `execute_shell_command` commands — commands run through the persistent Termux shell. When disabled, root escalation is blocked in normal shell sessions and the assistant must use the `request_root_access` tool for one-shot audited root commands. Destructive device-level commands (`reboot`, `shutdown`, `fastboot`, `mkfs`, block-device `dd`) are always blocked regardless of the toggle.
 
 ## Concepts
 
@@ -81,7 +85,9 @@ The shell session can break — the user types `exit`, a command crashes bash, t
 | `composeApp/src/androidMain/kotlin/com/inspiredandroid/kai/sandbox/ProotExecutor.kt` | Low-level proot invocation — stream readers, stdin pipe, timeout-bounded one-shot execution. Used by the persistent shell, by package install, and by background jobs. |
 | `composeApp/src/androidMain/kotlin/com/inspiredandroid/kai/sandbox/RootfsDownloader.kt` | Downloads Alpine rootfs, extracts the tarball, writes `resolv.conf` and `repositories`. |
 | `composeApp/src/androidMain/kotlin/com/inspiredandroid/kai/SandboxController.android.kt` | Routes `executeCommand` and `executeCommandStreaming` through the persistent shell; one-shot fallbacks live alongside. |
-| `composeApp/src/androidMain/kotlin/com/inspiredandroid/kai/tools/ShellCommandTool.kt` | The `execute_shell_command` tool the assistant calls. Description, `fresh` flag, env/working-dir wrapping. |
+| `composeApp/src/androidMain/kotlin/com/inspiredandroid/kai/tools/ShellCommandTool.kt` | The `execute_shell_command` tool the assistant calls. Description, `fresh` flag, env/working-dir wrapping. On the Termux build, routes through `TermuxShellSessions` and respects the root shell toggle. |
+| `composeApp/src/androidMain/kotlin/com/inspiredandroid/kai/tools/RequestRootAccessTool.kt` | One-shot audited root execution for Termux. Native approval prompt, audit log, cooldown. Used when the root shell toggle is off; directs users to the toggle for frequent root use. |
+| `composeApp/src/androidMain/kotlin/com/inspiredandroid/kai/TermuxSandboxController.android.kt` | Termux-backed sandbox controller. `TermuxShellExecutor` (one-shot and streaming), `TermuxPersistentShell` (long-lived bash with sentinel framing), `TermuxShellSessions` (session-keyed shell map). Root escalation toggled via `AppSettings.isTermuxRootShellEnabled()`. |
 | `composeApp/src/androidMain/kotlin/com/inspiredandroid/kai/tools/ProcessManager.kt` / `ProcessManagerTool.kt` | Background-job lifecycle: detached one-shot proot, in-memory session table, status/kill controls. |
 | `composeApp/src/commonMain/kotlin/com/inspiredandroid/kai/ui/sandbox/SandboxSessionViewModel.kt` | Terminal-tab ViewModel: line buffer, run/cancel state, stream draining. |
 | `composeApp/src/commonMain/kotlin/com/inspiredandroid/kai/ui/settings/TerminalSheet.kt` | Visible terminal UI with command echo, color-coded streams, and an interactive input row. |

@@ -411,6 +411,18 @@ class AppSettings(private val settings: Settings) {
         settings.putString(KEY_LOCAL_TOOL_ACCESS_MODE, mode.name)
     }
 
+    fun isTermuxRootShellEnabled(): Boolean = settings.getBoolean(KEY_TERMUX_ROOT_SHELL_ENABLED, false)
+
+    fun setTermuxRootShellEnabled(enabled: Boolean) {
+        settings.putBoolean(KEY_TERMUX_ROOT_SHELL_ENABLED, enabled)
+    }
+
+    fun isPhoneRagContextEnabled(): Boolean = settings.getBoolean(KEY_PHONE_RAG_CONTEXT_ENABLED, false)
+
+    fun setPhoneRagContextEnabled(enabled: Boolean) {
+        settings.putBoolean(KEY_PHONE_RAG_CONTEXT_ENABLED, enabled)
+    }
+
     fun getLocalInferenceBackendMode(): LocalInferenceBackendMode {
         val saved = settings.getString(KEY_LOCAL_INFERENCE_BACKEND_MODE, LocalInferenceBackendMode.AUTO.name)
         return LocalInferenceBackendMode.entries.firstOrNull { it.name == saved } ?: LocalInferenceBackendMode.AUTO
@@ -1305,6 +1317,8 @@ class AppSettings(private val settings: Settings) {
         const val KEY_MODEL_CONTEXT_PREFIX = "model_context_"
 
         const val KEY_SANDBOX_ENABLED = "sandbox_enabled"
+        const val KEY_TERMUX_ROOT_SHELL_ENABLED = "termux_root_shell_enabled"
+        const val KEY_PHONE_RAG_CONTEXT_ENABLED = "phone_rag_context_enabled"
 
         // Basic memory guidance shared by every chat variant. The advanced `## Structured
         // Learning` block lives in `ChatSystemPromptBuilder.DEFAULT_STRUCTURED_LEARNING_SECTION`

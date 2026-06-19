@@ -50,6 +50,7 @@ import com.inspiredandroid.kai.ui.chat.ChatScreen
 import com.inspiredandroid.kai.ui.chat.ChatViewModel
 import com.inspiredandroid.kai.ui.components.FullScreenImageHost
 import com.inspiredandroid.kai.ui.handCursor
+import com.inspiredandroid.kai.ui.settings.SandboxViewModel
 import com.inspiredandroid.kai.ui.settings.SettingsScreen
 import com.inspiredandroid.kai.ui.withBlackBackground
 import kai.composeapp.generated.resources.Res
@@ -167,6 +168,8 @@ private fun AppContent(
         Theme(colorScheme = effectiveColorScheme) {
             FullScreenImageHost {
                 val chatViewModel: ChatViewModel = koinViewModel()
+                val sandboxViewModel: SandboxViewModel = koinViewModel()
+                val sandboxState by sandboxViewModel.state.collectAsStateWithLifecycle()
                 val showTabBar = currentPlatform !is Platform.Mobile
                 val currentBackStackEntry by navController.currentBackStackEntryAsState()
                 val isHome = currentBackStackEntry?.destination?.route == "home"
@@ -217,6 +220,12 @@ private fun AppContent(
                                 navController.navigate(Settings)
                             },
                             isSandboxAvailable = currentPlatform is Platform.Mobile.Android,
+                            isTermuxRootShellEnabled = sandboxState.isTermuxRootShellEnabled,
+                            showRootShellToggle = sandboxState.sandboxReady && sandboxState.sandboxEnvironmentName == "Termux",
+                            onToggleTermuxRootShell = { sandboxViewModel.onToggleTermuxRootShell(!sandboxState.isTermuxRootShellEnabled) },
+                            isPhoneRagContextEnabled = sandboxState.isPhoneRagContextEnabled,
+                            showPhoneRagContextToggle = currentPlatform is Platform.Mobile.Android,
+                            onTogglePhoneRagContext = { sandboxViewModel.onTogglePhoneRagContext(!sandboxState.isPhoneRagContextEnabled) },
                             navigationTabBar = if (showTabBar) navigationTabBar else null,
                         )
                     }

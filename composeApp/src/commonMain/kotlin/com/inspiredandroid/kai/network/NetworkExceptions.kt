@@ -50,6 +50,7 @@ class OpenAICompatibleRequestTooLargeException : OpenAICompatibleApiException()
 class ContextWindowExceededException : ApiException(null)
 class UnsupportedFileTypeException : ApiException(null)
 class FileTooLargeException : ApiException(null)
+class PhoneRagConnectionException(message: String, cause: Throwable? = null) : ApiException(message, cause)
 
 sealed interface UiError {
     data class Resource(val resource: StringResource) : UiError

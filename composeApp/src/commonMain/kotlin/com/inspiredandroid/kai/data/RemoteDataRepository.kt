@@ -36,6 +36,7 @@ import com.inspiredandroid.kai.network.dtos.gemini.extractText
 import com.inspiredandroid.kai.network.toUiError
 import com.inspiredandroid.kai.network.tools.Tool
 import com.inspiredandroid.kai.network.tools.ToolInfo
+import com.inspiredandroid.kai.smartTruncate
 import com.inspiredandroid.kai.sms.SmsPoller
 import com.inspiredandroid.kai.sms.SmsReader
 import com.inspiredandroid.kai.sms.SmsSendResult
@@ -77,6 +78,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
@@ -99,6 +101,11 @@ private const val MAX_HEARTBEAT_MESSAGES = 50
 private const val ESTIMATED_CHARS_PER_TOKEN = 4
 private const val COMPACTION_THRESHOLD = 0.7 // Compact when history exceeds 70% of context window
 private const val COMPACTION_KEEP_RECENT = 4 // Number of recent user exchanges to keep verbatim
+private const val PHONE_RAG_QUERY_TOP_K = 6
+private const val PHONE_RAG_QUERY_MIN_SCORE = 0.35
+private const val PHONE_RAG_INJECT_MIN_SCORE = 0.42
+private const val PHONE_RAG_MAX_CONTEXT_CHARS = 3500
+private const val PHONE_RAG_MAX_SNIPPET_CHARS = 700
 
 // Explicit allowlist of tools exposed to the on-device (LiteRT) model. We use a
 // hardcoded name list rather than a structural filter because small Gemma models hit
@@ -586,43 +593,99 @@ class RemoteDataRepository(
             // (`ask()`/`askWithTools()`) pre-fetched a CHAT_REMOTE prompt, but on-device
             // needs the trimmed variant.
             val localPrompt = getActiveSystemPrompt(SystemPromptVariant.CHAT_LOCAL)
-            return askWithLocalEngine(messages, localPrompt, instanceId, history)
+            val contextualLocalPrompt = withPhoneRagContext(localPrompt, messages, history)
+            return askWithLocalEngine(messages, contextualLocalPrompt, instanceId, history)
         }
 
+        val contextualSystemPrompt = withPhoneRagContext(systemPrompt, messages, history)
         val creds = instanceCredentials(instanceId, service)
         val tools = if (supportsTools(creds.modelId)) getAvailableTools() else emptyList()
 
         return when (service) {
             Service.Gemini -> {
                 if (tools.isNotEmpty()) {
-                    handleGeminiChatWithTools(creds, messages, tools, systemPrompt, history)
+                    handleGeminiChatWithTools(creds, messages, tools, contextualSystemPrompt, history)
                 } else {
                     val geminiMessages = messages.map { it.toGeminiMessageDto() }
-                    val response = requests.geminiChat(creds, geminiMessages, systemInstruction = systemPrompt).getOrThrow()
+                    val response = requests.geminiChat(creds, geminiMessages, systemInstruction = contextualSystemPrompt).getOrThrow()
                     response.extractText()
                 }
             }
 
             Service.Anthropic -> {
                 if (tools.isNotEmpty()) {
-                    handleAnthropicChatWithTools(creds, messages, tools, systemPrompt, history)
+                    handleAnthropicChatWithTools(creds, messages, tools, contextualSystemPrompt, history)
                 } else {
                     val anthropicMessages = buildAnthropicMessages(messages)
-                    val response = requests.anthropicChat(creds, anthropicMessages, systemInstruction = systemPrompt).getOrThrow()
+                    val response = requests.anthropicChat(creds, anthropicMessages, systemInstruction = contextualSystemPrompt).getOrThrow()
                     response.extractText()
                 }
             }
 
             else -> {
                 if (tools.isNotEmpty()) {
-                    handleOpenAICompatibleChatWithTools(service, creds, messages, tools, systemPrompt, history)
+                    handleOpenAICompatibleChatWithTools(service, creds, messages, tools, contextualSystemPrompt, history)
                 } else {
-                    val openAIMessages = buildOpenAIMessages(messages, systemPrompt)
+                    val openAIMessages = buildOpenAIMessages(messages, contextualSystemPrompt)
                     val response = requests.openAICompatibleChat(service, creds, openAIMessages).getOrThrow()
                     response.choices.firstOrNull()?.message?.effectiveContent ?: throw OpenAICompatibleEmptyResponseException()
                 }
             }
         }
+    }
+
+    private suspend fun withPhoneRagContext(
+        systemPrompt: String?,
+        messages: List<History>,
+        history: MutableStateFlow<List<History>>,
+    ): String? {
+        if (!appSettings.isPhoneRagContextEnabled()) return systemPrompt
+        if (history !== chatHistory) return systemPrompt
+
+        val query = messages.lastOrNull { it.role == History.Role.USER }?.content?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return systemPrompt
+
+        val response = requests.phoneRagQuery(
+            query = query.smartTruncate(1000),
+            topK = PHONE_RAG_QUERY_TOP_K,
+            minScore = PHONE_RAG_QUERY_MIN_SCORE,
+        ).getOrNull() ?: return systemPrompt
+
+        val results = response.results
+            .asSequence()
+            .filter { it.score >= PHONE_RAG_INJECT_MIN_SCORE && it.text.isNotBlank() }
+            .take(5)
+            .toList()
+        if (results.isEmpty()) return systemPrompt
+
+        val context = buildString {
+            appendLine("## On-device phone context")
+            appendLine("The snippets below were retrieved from the user's local phone vector index. Use them only when relevant to the user's request. Do not claim they contain details beyond the quoted text.")
+            appendLine()
+            for ((index, result) in results.withIndex()) {
+                val title = phoneRagMetadata(result.metadata, "title")
+                val source = phoneRagMetadata(result.metadata, "source")
+                append(index + 1).append(". ")
+                if (title != null) append(title) else append("Untitled")
+                append(" (score ").append((result.score * 100).toInt()).append("%)")
+                appendLine()
+                if (source != null) append("Source: ").appendLine(source)
+                appendLine(result.text.trim().smartTruncate(PHONE_RAG_MAX_SNIPPET_CHARS))
+                appendLine()
+            }
+        }.smartTruncate(PHONE_RAG_MAX_CONTEXT_CHARS)
+
+        return listOfNotNull(
+            systemPrompt?.takeIf { it.isNotBlank() },
+            context,
+        ).joinToString("\n\n").takeIf { it.isNotBlank() }
+    }
+
+    private fun phoneRagMetadata(metadata: Map<String, JsonElement>, key: String): String? = try {
+        metadata[key]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+    } catch (_: Exception) {
+        null
     }
 
     private fun hasValidInstanceApiKey(instanceId: String, service: Service): Boolean {
@@ -1819,6 +1882,18 @@ class RemoteDataRepository(
 
     override fun setSandboxEnabled(enabled: Boolean) {
         appSettings.setSandboxEnabled(enabled)
+    }
+
+    override fun isTermuxRootShellEnabled(): Boolean = appSettings.isTermuxRootShellEnabled()
+
+    override fun setTermuxRootShellEnabled(enabled: Boolean) {
+        appSettings.setTermuxRootShellEnabled(enabled)
+    }
+
+    override fun isPhoneRagContextEnabled(): Boolean = appSettings.isPhoneRagContextEnabled()
+
+    override fun setPhoneRagContextEnabled(enabled: Boolean) {
+        appSettings.setPhoneRagContextEnabled(enabled)
     }
 
     override fun getHeartbeatConfig(): HeartbeatConfig = heartbeatManager.getConfig()

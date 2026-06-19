@@ -68,6 +68,61 @@ val MODEL_CATALOG = listOf(
         maxContextTokens = 32_768,
         kvPerTokenBytes = 35_000,
     ),
+    LocalModel(
+        id = "gemma-3-270m-it-q8",
+        displayName = "Gemma 3 270M IT Q8",
+        fileName = "gemma3-270m-it-q8.litertlm",
+        sizeBytes = 304_005_120L,
+        downloadUrl = "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.litertlm",
+        gpuMemoryMb = 160,
+        defaultContextTokens = 4_096,
+        maxContextTokens = 4_096,
+        kvPerTokenBytes = 20_000,
+    ),
+    LocalModel(
+        id = "gemma-3-1b-it-int4",
+        displayName = "Gemma 3 1B IT Int4",
+        fileName = "gemma3-1b-it-int4.litertlm",
+        sizeBytes = 584_417_280L,
+        downloadUrl = "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.litertlm",
+        gpuMemoryMb = 260,
+        defaultContextTokens = 4_096,
+        maxContextTokens = 4_096,
+        kvPerTokenBytes = 35_000,
+    ),
+    LocalModel(
+        id = "qwen2.5-1.5b-instruct-q8",
+        displayName = "Qwen2.5 1.5B Instruct Q8",
+        fileName = "Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+        sizeBytes = 1_597_931_520L,
+        downloadUrl = "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+        gpuMemoryMb = 430,
+        defaultContextTokens = 4_096,
+        maxContextTokens = 4_096,
+        kvPerTokenBytes = 45_000,
+    ),
+    LocalModel(
+        id = "deepseek-r1-distill-qwen-1.5b-q8",
+        displayName = "DeepSeek R1 Distill Qwen 1.5B Q8",
+        fileName = "DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm",
+        sizeBytes = 1_833_451_520L,
+        downloadUrl = "https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm",
+        gpuMemoryMb = 460,
+        defaultContextTokens = 4_096,
+        maxContextTokens = 4_096,
+        kvPerTokenBytes = 45_000,
+    ),
+    LocalModel(
+        id = "phi-4-mini-instruct-q8",
+        displayName = "Phi 4 Mini Instruct Q8",
+        fileName = "Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+        sizeBytes = 3_910_090_752L,
+        downloadUrl = "https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+        gpuMemoryMb = 760,
+        defaultContextTokens = 4_096,
+        maxContextTokens = 4_096,
+        kvPerTokenBytes = 70_000,
+    ),
 )
 
 class LiteRTInferenceEngine : LocalInferenceEngine {
@@ -375,7 +430,7 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
     override fun getDownloadedModels(): List<DownloadedModel> {
         val modelsDir = File(getModelStorageDirectory())
         if (!modelsDir.exists()) return emptyList()
-        return MODEL_CATALOG.mapNotNull { catalogModel ->
+        val catalogModels = MODEL_CATALOG.mapNotNull { catalogModel ->
             val modelDir = File(modelsDir, catalogModel.id)
             val modelFile = File(modelDir, catalogModel.fileName)
             if (modelFile.exists()) {
@@ -389,6 +444,23 @@ class LiteRTInferenceEngine : LocalInferenceEngine {
                 null
             }
         }
+        val catalogPaths = catalogModels.map { it.filePath }.toSet()
+        val sideLoadedModels = modelsDir
+            .walkTopDown()
+            .maxDepth(2)
+            .filter { it.isFile && it.extension == "litertlm" && it.absolutePath !in catalogPaths }
+            .map { file ->
+                val id = file.parentFile?.name?.takeIf { it.isNotBlank() && it != modelsDir.name }
+                    ?: file.nameWithoutExtension
+                DownloadedModel(
+                    id = id,
+                    displayName = id.replace('-', ' ').replace('_', ' '),
+                    filePath = file.absolutePath,
+                    sizeBytes = file.length(),
+                )
+            }
+            .toList()
+        return catalogModels + sideLoadedModels
     }
 
     override fun getAvailableModels(): List<LocalModel> = MODEL_CATALOG

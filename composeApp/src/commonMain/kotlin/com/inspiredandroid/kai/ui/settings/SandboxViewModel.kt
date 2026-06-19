@@ -26,6 +26,8 @@ data class SandboxUiState(
     val sandboxResetAvailable: Boolean = true,
     val sandboxPackageManagerAvailable: Boolean = true,
     val isSandboxEnabled: Boolean = true,
+    val isTermuxRootShellEnabled: Boolean = false,
+    val isPhoneRagContextEnabled: Boolean = false,
     val isWorking: Boolean = false,
     val hasError: Boolean = false,
 )
@@ -45,6 +47,8 @@ class SandboxViewModel(
             SandboxUiState(
                 showSandbox = currentPlatform is Platform.Mobile.Android,
                 isSandboxEnabled = dataRepository.isSandboxEnabled(),
+                isTermuxRootShellEnabled = dataRepository.isTermuxRootShellEnabled(),
+                isPhoneRagContextEnabled = dataRepository.isPhoneRagContextEnabled(),
             ),
         ),
     )
@@ -77,6 +81,16 @@ class SandboxViewModel(
         dataRepository.setSandboxEnabled(enabled)
         if (!enabled) sandboxController.cancel()
         _state.update { it.copy(isSandboxEnabled = enabled) }
+    }
+
+    fun onToggleTermuxRootShell(enabled: Boolean) {
+        dataRepository.setTermuxRootShellEnabled(enabled)
+        _state.update { it.copy(isTermuxRootShellEnabled = enabled) }
+    }
+
+    fun onTogglePhoneRagContext(enabled: Boolean) {
+        dataRepository.setPhoneRagContextEnabled(enabled)
+        _state.update { it.copy(isPhoneRagContextEnabled = enabled) }
     }
 
     fun onSetupSandbox() {

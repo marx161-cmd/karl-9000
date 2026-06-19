@@ -130,6 +130,12 @@ fun ChatScreen(
     textToSpeech: TextToSpeechInstance?,
     onNavigateToSettings: () -> Unit,
     isSandboxAvailable: Boolean = false,
+    isTermuxRootShellEnabled: Boolean = false,
+    showRootShellToggle: Boolean = false,
+    onToggleTermuxRootShell: () -> Unit = {},
+    isPhoneRagContextEnabled: Boolean = false,
+    showPhoneRagContextToggle: Boolean = false,
+    onTogglePhoneRagContext: () -> Unit = {},
     navigationTabBar: (@Composable () -> Unit)? = null,
 ) {
     val uiState by viewModel.state.collectAsStateWithLifecycle()
@@ -139,6 +145,12 @@ fun ChatScreen(
         textToSpeech = textToSpeech,
         onNavigateToSettings = onNavigateToSettings,
         isSandboxAvailable = isSandboxAvailable,
+        isTermuxRootShellEnabled = isTermuxRootShellEnabled,
+        showRootShellToggle = showRootShellToggle,
+        onToggleTermuxRootShell = onToggleTermuxRootShell,
+        isPhoneRagContextEnabled = isPhoneRagContextEnabled,
+        showPhoneRagContextToggle = showPhoneRagContextToggle,
+        onTogglePhoneRagContext = onTogglePhoneRagContext,
         navigationTabBar = navigationTabBar,
     )
 }
@@ -149,6 +161,12 @@ fun ChatScreenContent(
     textToSpeech: TextToSpeechInstance? = null,
     onNavigateToSettings: () -> Unit = {},
     isSandboxAvailable: Boolean = false,
+    isTermuxRootShellEnabled: Boolean = false,
+    showRootShellToggle: Boolean = false,
+    onToggleTermuxRootShell: () -> Unit = {},
+    isPhoneRagContextEnabled: Boolean = false,
+    showPhoneRagContextToggle: Boolean = false,
+    onTogglePhoneRagContext: () -> Unit = {},
     navigationTabBar: (@Composable () -> Unit)? = null,
 ) {
     if (uiState.isInteractiveMode && !uiState.isRestoring) {
@@ -159,6 +177,12 @@ fun ChatScreenContent(
             textToSpeech = textToSpeech,
             onNavigateToSettings = onNavigateToSettings,
             isSandboxAvailable = isSandboxAvailable,
+            isTermuxRootShellEnabled = isTermuxRootShellEnabled,
+            showRootShellToggle = showRootShellToggle,
+            onToggleTermuxRootShell = onToggleTermuxRootShell,
+            isPhoneRagContextEnabled = isPhoneRagContextEnabled,
+            showPhoneRagContextToggle = showPhoneRagContextToggle,
+            onTogglePhoneRagContext = onTogglePhoneRagContext,
             navigationTabBar = navigationTabBar,
         )
     }
@@ -441,6 +465,12 @@ private fun ChatModeScreen(
     textToSpeech: TextToSpeechInstance?,
     onNavigateToSettings: () -> Unit,
     isSandboxAvailable: Boolean,
+    isTermuxRootShellEnabled: Boolean = false,
+    showRootShellToggle: Boolean = false,
+    onToggleTermuxRootShell: () -> Unit = {},
+    isPhoneRagContextEnabled: Boolean = false,
+    showPhoneRagContextToggle: Boolean = false,
+    onTogglePhoneRagContext: () -> Unit = {},
     navigationTabBar: (@Composable () -> Unit)?,
 ) {
     var showHistorySheet by remember { mutableStateOf(false) }
@@ -493,6 +523,12 @@ private fun ChatModeScreen(
                 isSandboxOpen = isSandboxOpen,
                 isShellExecuting = isShellExecuting,
                 onToggleSandbox = { isSandboxOpen = !isSandboxOpen },
+                isTermuxRootShellEnabled = isTermuxRootShellEnabled,
+                showRootShellToggle = showRootShellToggle,
+                onToggleTermuxRootShell = onToggleTermuxRootShell,
+                isPhoneRagContextEnabled = isPhoneRagContextEnabled,
+                showPhoneRagContextToggle = showPhoneRagContextToggle,
+                onTogglePhoneRagContext = onTogglePhoneRagContext,
                 onShowHistory = {
                     keyboardController?.hide()
                     showHistorySheet = true

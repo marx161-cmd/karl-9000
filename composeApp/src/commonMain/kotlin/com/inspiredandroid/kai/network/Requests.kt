@@ -40,17 +40,34 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import kotlin.time.Duration.Companion.seconds
 
 data class ServiceCredentials(
     val apiKey: String = "",
     val modelId: String = "",
     val baseUrl: String = "",
+)
+
+@Serializable
+data class PhoneRagQueryResponseDto(
+    val ok: Boolean = false,
+    val results: List<PhoneRagResultDto> = emptyList(),
+)
+
+@Serializable
+data class PhoneRagResultDto(
+    val score: Double = 0.0,
+    val text: String = "",
+    val metadata: Map<String, JsonElement> = emptyMap(),
 )
 
 class Requests {
@@ -88,6 +105,35 @@ class Requests {
         override fun log(message: String) {
             println("[KTOR] $message")
         }
+    }
+
+    suspend fun phoneRagQuery(
+        query: String,
+        topK: Int = 6,
+        minScore: Double = 0.35,
+    ): Result<PhoneRagQueryResponseDto> = try {
+        val response: HttpResponse = defaultClient.post("http://127.0.0.1:8791/query") {
+            timeout {
+                requestTimeoutMillis = 2500
+                socketTimeoutMillis = 2500
+                connectTimeoutMillis = 1000
+            }
+            contentType(ContentType.Application.Json)
+            setBody(
+                buildJsonObject {
+                    put("query", query)
+                    put("top_k", topK)
+                    put("min_score", minScore)
+                },
+            )
+        }
+        if (response.status.isSuccess()) {
+            Result.success(response.body())
+        } else {
+            Result.failure(PhoneRagConnectionException("Phone RAG query failed: ${response.status}"))
+        }
+    } catch (e: Exception) {
+        Result.failure(PhoneRagConnectionException("Phone RAG query failed", e))
     }
 
     // region Gemini

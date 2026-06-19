@@ -32,6 +32,9 @@ Preserve upstream license terms and attribution when reusing this branch.
 - Additional LiteRT model catalog entries and side-loaded `.litertlm` discovery.
 - Termux-suite model storage path support for sharing model files with Termux.
 - No-op Play review helper for the Termux-suite flavor.
+- **Root shell access toggle**: persistent user-controlled setting (Settings > Sandbox, or Shield icon in chat top bar) that allows the assistant to use `su`/`sudo`/`tsu` directly through the persistent Termux shell when enabled. When disabled, root escalation is blocked in normal shell sessions and the assistant must use the `request_root_access` tool for one-shot audited root commands. Destructive device-level commands are always blocked.
+- Side-loaded `.litertlm` model discovery under the shared Termux model directory.
+- Additional LiteRT model catalog entries (Gemma 3 270M/1B, Qwen2.5 1.5B, DeepSeek R1 Distill Qwen 1.5B, Phi 4 Mini).
 
 ## Credits
 

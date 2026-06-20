@@ -261,7 +261,7 @@ private fun LeadingButtons(
         ) {
             Icon(
                 imageVector = Icons.Filled.Storage,
-                contentDescription = "Phone RAG context injection",
+                contentDescription = "Phone RAG search tool",
                 tint = if (isPhoneRagContextEnabled) {
                     primary
                 } else {

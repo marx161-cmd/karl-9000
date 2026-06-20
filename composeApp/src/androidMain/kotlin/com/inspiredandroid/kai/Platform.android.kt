@@ -39,6 +39,7 @@ import com.inspiredandroid.kai.tools.NotificationPermissionController
 import com.inspiredandroid.kai.tools.NotificationResult
 import com.inspiredandroid.kai.tools.NotificationTools
 import com.inspiredandroid.kai.tools.OpenFileTool
+import com.inspiredandroid.kai.tools.PhoneRagSearchTool
 import com.inspiredandroid.kai.tools.ProcessManagerTool
 import com.inspiredandroid.kai.tools.RequestRootAccessTool
 import com.inspiredandroid.kai.tools.SchedulingTools
@@ -216,6 +217,7 @@ actual fun getPlatformToolDefinitions(): List<ToolInfo> = buildList {
         ),
     )
     add(RequestRootAccessTool.toolInfo)
+    add(PhoneRagSearchTool.toolInfo)
     // SMS tools are intentionally absent here: availability is driven by the Agent-tab
     // master toggles (isSmsEnabled / isSmsSendEnabled) plus the FOSS-only `isSmsSupported`
     // check in `getAvailableTools()`. Listing per-tool toggles in the Tools tab was dead
@@ -421,6 +423,10 @@ actual fun getAvailableTools(): List<Tool> {
 
         if (appSettings.isToolEnabled(OpenFileTool.schema.name)) {
             add(OpenFileTool)
+        }
+
+        if (appSettings.isPhoneRagContextEnabled()) {
+            add(PhoneRagSearchTool)
         }
 
         if (appSettings.isSandboxEnabled()) {

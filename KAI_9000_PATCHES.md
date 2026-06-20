@@ -33,6 +33,11 @@ Preserve upstream license terms and attribution when reusing this branch.
 - Termux-suite model storage path support for sharing model files with Termux.
 - No-op Play review helper for the Termux-suite flavor.
 - **Root shell access toggle**: persistent user-controlled setting (Settings > Sandbox, or Shield icon in chat top bar) that allows the assistant to use `su`/`sudo`/`tsu` directly through the persistent Termux shell when enabled. When disabled, root escalation is blocked in normal shell sessions and the assistant must use the `request_root_access` tool for one-shot audited root commands. Destructive device-level commands are always blocked.
+- **Phone RAG search tool toggle**: Android chat top-bar storage icon. When
+  enabled, Kai exposes the model-callable `search_phone_context` tool backed by
+  the companion Phone RAG localhost service. Kai does not silently inject Phone
+  RAG snippets into the system prompt; the model must call the tool to retrieve
+  indexed phone files, transcripts, notes, and local context.
 - Side-loaded `.litertlm` model discovery under the shared Termux model directory.
 - Additional LiteRT model catalog entries (Gemma 3 270M/1B, Qwen2.5 1.5B, DeepSeek R1 Distill Qwen 1.5B, Phi 4 Mini).
 

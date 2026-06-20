@@ -24,6 +24,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.inspiredandroid.kai.Platform
+import com.inspiredandroid.kai.currentPlatform
 import com.inspiredandroid.kai.ui.chat.ChatActions
 import com.inspiredandroid.kai.ui.handCursor
 import kai.composeapp.generated.resources.Res
@@ -244,7 +246,8 @@ private fun LeadingButtons(
             )
         }
     }
-    if (showPhoneRagContextToggle) {
+    val shouldShowPhoneRagContextToggle = showPhoneRagContextToggle || currentPlatform is Platform.Mobile.Android
+    if (shouldShowPhoneRagContextToggle) {
         val primary = MaterialTheme.colorScheme.primary
         val checkedContainer = primary.copy(alpha = 0.2f)
         IconToggleButton(
